@@ -1,0 +1,12 @@
+# حماية البيانات: لا تُرفع أي ملفات Excel أو CSV معبأة إلى المستودع
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+# القالب الفارغ وحده مسموح
+!template/platform-data-template.xlsx
+
+# ملفات النظام
+.DS_Store
+Thumbs.db
+~$*
