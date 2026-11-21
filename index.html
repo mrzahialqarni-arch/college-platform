@@ -117,6 +117,8 @@ select.sel{border:1px solid #C6D1CB;border-radius:8px;padding:9px 12px;min-heigh
 tr.tot td{background:var(--accent-soft);font-weight:700}
 .half{flex:1 1 520px}
 .kpis.k4{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+.st{display:inline-block;border-radius:999px;padding:3px 10px;font-size:13px;white-space:nowrap}
+.st-met{background:#E3F2EA;color:#0A4D39}.st-near{background:#FFF1DC;color:#8A4300}.st-behind{background:#FDE7E4;color:#9E1F14}.st-na{background:var(--soft);color:var(--muted)}
 @media (max-width:520px){.hbar{grid-template-columns:100px minmax(0,1fr) 70px}.mini{min-width:0;width:100%}h1{font-size:23px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -132,6 +134,7 @@ tr.tot td{background:var(--accent-soft);font-weight:700}
       <a id="nav-college" href="#college-0">لوحة الكلية</a>
       <a id="nav-dept" href="#dept-0">لوحة القسم</a>
       <a id="nav-member" href="#member-0">صفحة العضو</a>
+      <a id="nav-quality" href="#quality">جودة البيانات</a>
     </nav>
   </div>
 </header>
@@ -199,7 +202,7 @@ function mapRows(rows, spec, keyField){
   const head = rows[0].map(h => str(h));
   const idx = {};
   for (const k in spec) idx[k] = head.findIndex(h => h === spec[k] || h.indexOf(spec[k]) === 0);
-  return rows.slice(1).map(r => { const o = {}; for (const k in idx) o[k] = idx[k] >= 0 ? r[idx[k]] : ''; return o; })
+  return rows.slice(1).map((r, i) => { const o = { _row:i + 2 }; for (const k in idx) o[k] = idx[k] >= 0 ? r[idx[k]] : ''; return o; })
              .filter(o => str(o[keyField]) !== '');
 }
 function fromWorkbook(wb){
@@ -216,7 +219,8 @@ function fromWorkbook(wb){
     cmp: mapRows(rowsOf(wb,'الشكاوى'), {no:'رقم البلاغ', dept:'القسم', type:'النوع', channel:'قناة الورود', date:'تاريخ الورود', closed:'تاريخ الإغلاق', status:'الحالة'}, 'no'),
     stu: mapRows(rowsOf(wb,'الطلاب'), {dept:'القسم', stage:'المرحلة الدراسية', level:'المستوى', count:'عدد الطلاب', atRisk:'في خطر', grads:'متوقع تخرجهم'}, 'dept'),
     sec: mapRows(rowsOf(wb,'الجداول'), {code:'رمز المقرر', course:'اسم المقرر', sec:'الشعبة', dept:'القسم', inst:'الرقم الوظيفي', day:'اليوم', time:'الوقت', room:'القاعة', cap:'السعة', enrolled:'المسجلون'}, 'code'),
-    cou: mapRows(rowsOf(wb,'المجالس'), {council:'المجلس', body:'الجهة', date:'تاريخ الجلسة', items:'عدد البنود', done:'البنود المعتمدة', deferred:'البنود المؤجلة', minutes:'المحضر معتمد'}, 'council')
+    cou: mapRows(rowsOf(wb,'المجالس'), {council:'المجلس', body:'الجهة', date:'تاريخ الجلسة', items:'عدد البنود', done:'البنود المعتمدة', deferred:'البنود المؤجلة', minutes:'المحضر معتمد'}, 'council'),
+    tgt: mapRows(rowsOf(wb,'المستهدفات'), {code:'رمز المؤشر', target:'المستهدف', body:'الجهة'}, 'code')
   };
   if (!raw.fac.length) throw new Error('ورقة «الأعضاء» فارغة. أضف عضواً واحداً على الأقل ثم أعد فتح الملف.');
   return raw;
@@ -337,7 +341,8 @@ function build(raw){
   });
   const uni = summarize(X, new Set(dept.map(d => d.name)), new Set(collegeNames));
   const members = fac.slice().sort((a, b) => (a.college + a.dept + a.name).localeCompare(b.college + b.dept + b.name, 'ar'));
-  return { set, fac, members, res, req, cmp, stu, sec, cou, dept, colleges, uni };
+  const targets = (raw.tgt || []).map(t => ({ code:str(t.code).toUpperCase(), target:num(t.target), body:str(t.body) })).filter(t => t.target != null);
+  return { set, fac, members, res, req, cmp, stu, sec, cou, dept, colleges, uni, targets, quality:quality(raw) };
 }
 
 /* ---------- بيانات توضيحية ---------- */
@@ -361,15 +366,16 @@ function sampleRaw(){
       const items = ri(5, 14), done = Math.max(0, items - ri(0, 4));
       cou.push({ council:'مجلس الكلية', body:col, date:new Date(TODAY - ri(5, 140) * DAY), items, done, deferred:items - done, minutes:k === 0 && rnd() < 0.6 ? 'لا' : 'نعم' });
     }
-    ds.forEach(([d, students, nf, pre]) => {
+    ds.forEach(([d, students0, nf, pre]) => {
+      const students = Math.round(students0 * 0.3);
       depts.push({ college:col, name:d, students, sections:'', atRisk:'' });
       const ids = [];
       for (let i = 0; i < nf; i++) {
         const rank = pick(ranks), status = rnd() < 0.12 ? pick(['ابتعاث','إجازة']) : 'على رأس العمل';
         const id = 'S' + String(n).padStart(3, '0'); ids.push(status === 'على رأس العمل' ? id : null);
         fac.push({ id, name:'عضو تجريبي ' + String(n).padStart(3, '0'), dept:d, rank, status, load:status === 'على رأس العمل' ? ri(8, 18) : '',
-          rankDate:rnd() < 0.1 ? '' : new Date(Y - 1 - ri(0, 7), ri(0, 11), ri(1, 27)), claimed:rnd() < 0.35 ? 'نعم' : 'لا' });
-        const kr = rank === 'محاضر' ? ri(0, 1) : ri(0, 4);
+          rankDate:rnd() < 0.04 ? '' : new Date(Y - 1 - ri(0, 7), ri(0, 11), ri(1, 27)), claimed:rnd() < 0.35 ? 'نعم' : 'لا' });
+        const kr = rank === 'محاضر' ? ri(0, 1) : ri(1, 4);
         for (let j = 0; j < kr; j++) res.push({ id, title:'بحث توضيحي ' + (res.length + 1), venue:'[المجلة]', year:Y - ri(0, 2), q:pick(['Q1','Q1','Q2','Q2','Q3','Q4']), index:pick(['Scopus','كلاهما']), units:0.5, reward:pick(['لم يُقدَّم','معتمد','قيد الاعتماد']) });
         n++;
       }
@@ -378,28 +384,33 @@ function sampleRaw(){
       for (let lv = 1; lv <= 8; lv++) stu.push({ dept:d, stage:'بكالوريوس', level:'المستوى ' + lv, count:per + ri(-15, 15), atRisk:ri(1, Math.max(2, Math.round(per * 0.05))), grads:lv === 8 ? Math.round(per * 0.8) : 0 });
       if (rnd() < 0.7) stu.push({ dept:d, stage:'ماجستير', level:'السنة 1-2', count:ri(25, 60), atRisk:ri(0, 4), grads:ri(5, 15) });
       if (rnd() < 0.4) stu.push({ dept:d, stage:'دكتوراه', level:'السنة 1-4', count:ri(6, 20), atRisk:ri(0, 2), grads:ri(0, 4) });
-      const rooms = ['A', 'B', 'C', 'D', 'E'].map(r => pre + '-' + r + ri(1, 2));
+      const rooms = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map(r => pre + '-' + r + ri(1, 2));
       for (let i = 0; i < Math.round(nf * 1.4); i++) {
         const cap = pick([30, 35, 40, 45, 50]);
-        sec.push({ code:pre + ' ' + ri(101, 499), course:'مقرر ' + pre + ' ' + (i + 1), sec:String(ri(1, 3)), dept:d, inst:rnd() < 0.05 ? '' : pick(act) || '', day:pick(dayN), time:pick(times), room:pick(rooms), cap, enrolled:rnd() < 0.08 ? ri(3, 9) : ri(Math.round(cap * 0.5), cap + 4) });
+        sec.push({ code:pre + ' ' + ri(101, 499), course:'مقرر ' + pre + ' ' + (i + 1), sec:String(ri(1, 3)), dept:d, inst:rnd() < 0.05 ? '' : pick(act) || '', day:pick(dayN), time:pick(times), room:pick(rooms), cap, enrolled:rnd() < 0.05 ? ri(3, 9) : ri(Math.round(cap * 0.6), cap + (rnd() < 0.1 ? 4 : 0)) });
       }
       for (let k = 0; k < ri(3, 5); k++) {
         const items = ri(6, 15), done = Math.max(0, items - ri(0, 4));
-        cou.push({ council:'مجلس القسم', body:d, date:new Date(TODAY - ri(3, 150) * DAY), items, done, deferred:items - done, minutes:k === 0 && rnd() < 0.5 ? 'لا' : 'نعم' });
+        cou.push({ council:'مجلس القسم', body:d, date:new Date(TODAY - ri(3, 150) * DAY), items, done, deferred:items - done, minutes:k === 0 && rnd() < 0.25 ? 'لا' : 'نعم' });
       }
       for (let k = 0; k < ri(1, 5); k++) {
-        const st = pick(['مفتوحة','قيد المعالجة','مغلقة','مغلقة']), date = new Date(TODAY - ri(1, 25) * DAY);
+        const st = pick(['مفتوحة','قيد المعالجة','مغلقة','مغلقة','مغلقة']), date = new Date(TODAY - (rnd() < 0.75 ? ri(1, 5) : ri(6, 15)) * DAY);
         cmp.push({ no:'C-' + String(cmp.length + 1).padStart(4, '0'), dept:d, type:pick(['الجداول والاختبارات','رصد الدرجات','التسجيل','المرافق والقاعات','التعامل مع عضو هيئة التدريس']), channel:pick(['باعث مستفيد','لقاء','مباشر']), date, closed:st === 'مغلقة' ? new Date(+date + ri(1, 7) * DAY) : '', status:st });
       }
     });
   });
   for (let i = 0; i < 260; i++) {
     const f = pick(fac), sys = pick(Object.keys(T)), status = pick(['جديد','قيد الاعتماد','قيد الاعتماد','معتمد','مرفوض']);
-    const date = new Date(TODAY - ri(2, 60) * DAY);
+    const date = new Date(TODAY - (rnd() < 0.8 ? ri(1, 13) : ri(15, 40)) * DAY);
     req.push({ no:String(14000 + i), id:f.id, sys, type:T[sys], date, stage:status === 'معتمد' ? 'منتهٍ' : pick(['مجلس القسم','مجلس القسم','مجلس الكلية','المجلس العلمي']), status,
       updated:status === 'معتمد' || status === 'مرفوض' ? new Date(+date + ri(3, 22) * DAY) : '' });
   }
-  return { set:{ year:Y, load:14, reqSla:14, cmpSla:5, promo:4, minSec:10 }, depts, fac, res, req, cmp, stu, sec, cou };
+  req.push({ no:'14999', id:'S999', sys:'مكافآت التميز', type:'مكافأة نشر علمي', date:new Date(TODAY - 9 * DAY), stage:'مجلس القسم', status:'قيد الاعتماد', updated:'' });
+  cmp.push({ no:'C-9001', dept:'هندسة حاسب', type:'التسجيل', channel:'لقاء', date:new Date(TODAY - 4 * DAY), closed:'', status:'مغلقة' });
+  const tgt = [{ code:'T02', target:1.2, body:'كلية علوم الحاسب' }];
+  const R = { set:{ year:Y, load:14, reqSla:14, cmpSla:5, promo:4, minSec:10 }, depts, fac, res, req, cmp, stu, sec, cou, tgt };
+  ['depts','fac','res','req','cmp','stu','sec','cou','tgt'].forEach(k => R[k].forEach((o, i) => { o._row = i + 2; }));
+  return R;
 }
 
 /* ---------- أجزاء العرض ---------- */
@@ -487,9 +498,11 @@ function viewUniversity(M){
       alertBox(u.overdueCmp, 'شكاوى طلاب تجاوزت مهلة المعالجة', 'موزعة على الكليات في جدول المقارنة.', 'crit') +
       alertBox(u.overUnclaimed, 'أعضاء تجاوزوا النصاب ولم يطالبوا بالمكافأة', 'مستحقات مالية معلّقة لا يعلم بها أصحابها.', 'warn') +
       alertBox(u.minutesPending, 'محاضر مجالس غير معتمدة', quietCols ? `و${quietCols} كليات لم يُعقد مجلسها منذ أكثر من 60 يوماً.` : 'كل الكليات عقدت مجلساً خلال آخر 60 يوماً.', 'warn') +
-      alertBox(u.promoReady, 'أعضاء أمضوا مدة الترقية على رتبهم', 'فرصة لمتابعة مسارهم المهني مبكراً.', 'good'), 'grow')}
+      alertBox(u.promoReady, 'أعضاء أمضوا مدة الترقية على رتبهم', 'فرصة لمتابعة مسارهم المهني مبكراً.', 'good') +
+      (M.quality.crit ? `<p class="foot" style="margin:0">في البيانات <a href="#quality">${M.quality.crit} ملاحظة تغيّر المؤشرات</a>؛ راجعها قبل اعتماد الأرقام.</p>` : ''), 'grow')}
     ${card('h-uwatch', 'أقسام تحتاج متابعة', '', watch.length ? watch.map(d => `<div class="list-row"><span><a class="lnk" href="#dept-${d.i}">${esc(d.name)}</a><br><small class="foot">${esc(d.college)}</small></span><span class="foot" style="text-align:left">${[d.overdueReq && d.overdueReq + ' طلب متأخر', d.overdueCmp && d.overdueCmp + ' شكوى متأخرة', d.secIssues && d.secIssues + ' شعبة بمشكلة', d.minutesPending && d.minutesPending + ' محضر'].filter(Boolean).join(' · ')}</span></div>`).join('') : '<p class="empty">لا توجد أقسام بمؤشرات متأخرة.</p>', 'side')}
   </div>
+  ${card('h-utg', 'تحقيق المستهدفات', 'المستهدفات', targetsMatrix(M, [{ label:'الجامعة', names:['الجامعة'], s:u, main:true }].concat(cols.map(c => ({ label:c.name, link:link(c.i, c.name), names:[c.name], s:c })))))}
   ${card('h-ustu', 'الطلاب حسب الكلية والمرحلة الدراسية', 'الطلاب ← أكاديميا', stagesTable(cols, c => link(c.i, c.name)))}
   <div class="row">
     ${card('h-usch', 'سلامة الجداول الدراسية', 'الجداول ← أكاديميا', scheduleTable(cols, c => link(c.i, c.name)), 'half')}
@@ -531,6 +544,7 @@ function viewCollege(M, ci){
       alertBox(c.promoReady, 'أعضاء أمضوا ' + s.promo + ' سنوات فأكثر على رتبتهم', 'راجع أهليتهم للترقية مقابل الوحدات البحثية المحتسبة.', 'good'), 'grow')}
     ${card('h-cst', 'الطلبات المعلّقة لدى المجالس', 'الطلبات', stagePipeline(c.requests), 'side')}
   </div>
+  ${card('h-ctg', 'تحقيق المستهدفات', 'المستهدفات', targetsMatrix(M, [{ label:c.name, names:[c.name], s:c, main:true }].concat(D.map(d => ({ label:d.name, link:dl(d), names:[d.name, c.name], s:d })))))}
   ${card('h-cstu', 'الطلاب حسب القسم والمرحلة الدراسية', 'الطلاب', stagesTable(D, dl))}
   <div class="row">
     ${card('h-csch', 'سلامة الجداول حسب القسم', 'الجداول', scheduleTable(D, dl), 'half')}
@@ -575,6 +589,7 @@ function viewDept(M, i){
     ${card('h-cn', 'بانتظار مجلس القسم', 'الطلبات', (clist.length ? clist.map(([t, v]) => `<div class="list-row"><span>${esc(t)}<br><span class="src">${esc(v.sys)}</span></span><span class="num" style="text-align:left"><b>${v.n}</b><br><small class="${v.max > s.reqSla ? 'c' : ''}">أقدمها ${v.max} يوماً</small></span></div>`).join('') : '<p class="empty">لا توجد طلبات بانتظار المجلس.</p>') +
       `<p class="foot">جلسات المجلس آخر 120 يوماً: <b>${d.meetings}</b> · بنود لم تُعتمد: <b class="${d.pendingItems ? 'w' : ''}">${d.pendingItems}</b> · محاضر غير معتمدة: <b class="${d.minutesPending ? 'c' : ''}">${d.minutesPending}</b></p>`, 'side')}
   </div>
+  ${card('h-dtg', 'تحقيق المستهدفات', 'المستهدفات', targetsMatrix(M, [{ label:'القسم', names:[d.name, d.college], s:d, main:true }, { label:'الكلية', names:[d.college], s:c }]))}
   ${card('h-sch', 'الشعب التي تحتاج معالجة', 'الجداول ← أكاديميا', `<p class="foot" style="margin:0">${d.secIssues} من ${d.sections} شعبة · فوق السعة ${d.secOver} · دون الحد الأدنى (${s.minSec} طلاب) ${d.secLow} · بلا محاضر ${d.secNoInst} · تعارضات ${d.secClash}</p>` + issueSections(d.secList, 12))}
   <div class="row">
     ${card('h-stu', 'الطلاب حسب المرحلة والمستوى', 'الطلاب ← أكاديميا', lv.length ? table(['المرحلة', 'المستوى', 'الطلاب', 'في خطر', 'متوقع تخرجهم'], lv.map(x => `<tr><td>${esc(x.stage)}</td><td>${esc(x.level)}</td><td class="num">${fmt(x.count)}</td><td class="num ${x.atRisk ? 'w' : ''}">${fmt(x.atRisk)}</td><td class="num">${fmt(x.grads)}</td></tr>`).join('') + totalRow(['الإجمالي', '', fmt(d.students), fmt(d.atRisk), fmt(d.grads)]), 480) : `<div class="list-row"><span>الطلاب المنتظمون</span><b class="num">${fmt(d.students)}</b></div><p class="foot">أضف ورقة «الطلاب» لعرض التوزيع حسب المرحلة والمستوى.</p>`, 'side')}
@@ -638,6 +653,134 @@ function viewMember(M, i){
   </div>
   ${f.secs.length ? card('h-msec', 'جدولي هذا الفصل', 'الجداول ← أكاديميا', table(['المقرر', 'الشعبة', 'الموعد', 'القاعة', 'المسجلون/السعة', 'ملاحظة'], f.secs.map(x => `<tr><td>${esc(x.code)} · ${esc(x.course)}</td><td class="num">${esc(x.sec)}</td><td>${esc(x.day)} <bdi dir="ltr">${esc(x.time)}</bdi></td><td><bdi dir="ltr">${esc(x.room)}</bdi></td><td class="num">${x.enrolled}/${x.cap == null ? '—' : x.cap}</td><td class="${x.issue ? (/تعارض|بلا/.test(x.issue) ? 'c' : 'w') : ''}">${esc(x.issue)}</td></tr>`).join(''), 640)) : ''}
   ${card('h-pb', 'الإنتاج العلمي', 'الأبحاث', table(['عنوان البحث', 'الوعاء', 'السنة', 'الربعية', 'الوحدات', 'المكافأة'], f.res.length ? f.res.slice().sort((a, b) => (b.year || 0) - (a.year || 0)).map(r => `<tr><td class="wrap" dir="auto">${r.doi ? `<a href="https://doi.org/${encodeURI(r.doi)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}</td><td class="wrap" style="min-width:160px">${esc(r.venue)}</td><td class="num">${r.year || '—'}</td><td>${esc(r.q)}</td><td class="num">${f1(r.units)}</td><td class="${/مرفوض/.test(r.reward) ? 'c' : ''}">${esc(r.reward)}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">لا توجد أبحاث مسجلة لهذا العضو.</td></tr>', 760))}`;
+}
+
+
+/* ---------- المستهدفات ---------- */
+const IND = [
+  { code:'T01', name:'نسبة الطلاب إلى عضو هيئة التدريس', dir:'low', def:25, val:u => u.ratio, f:f1 },
+  { code:'T02', name:'البحث لكل عضو', dir:'high', def:1, val:u => u.perFac, f:f2 },
+  { code:'T03', name:'نسبة أبحاث Q1 و Q2', dir:'high', def:0.6, val:u => u.pubs ? (u.q1 + u.q2) / u.pubs : null, f:pc },
+  { code:'T04', name:'اكتمال ملفات الأعضاء', dir:'high', def:0.95, val:u => u.profilePct, f:pc },
+  { code:'T05', name:'نسبة امتلاء الشعب', dir:'high', def:0.75, val:u => u.secFill, f:pc },
+  { code:'T06', name:'الشعب التي بها مشكلة', dir:'low', def:0.05, val:u => u.secList.length ? u.secIssues / u.secList.length : null, f:pc },
+  { code:'T07', name:'الطلبات المتأخرة من المعلّقة', dir:'low', def:0.1, val:u => u.requests.length ? (u.openReq ? u.overdueReq / u.openReq : 0) : null, f:pc },
+  { code:'T08', name:'الشكاوى المتأخرة من المفتوحة', dir:'low', def:0.1, val:u => u.complaints.length ? (u.openCmp ? u.overdueCmp / u.openCmp : 0) : null, f:pc },
+  { code:'T09', name:'الطلاب في خطر أكاديمي', dir:'low', def:0.03, val:u => u.students ? u.atRisk / u.students : null, f:pc },
+  { code:'T10', name:'محاضر المجالس غير المعتمدة', dir:'low', def:0, val:u => u.couList.length ? u.minutesPending : null, f:v => v == null ? '—' : String(v) }
+];
+function tgtFor(M, code, names){
+  const T = M.targets || [];
+  for (const n of names) { const r = T.find(t => t.code === code && t.body === n); if (r) return { v:r.target, custom:true }; }
+  const g = T.find(t => t.code === code && !t.body);
+  if (g) return { v:g.target, custom:false, set:true };
+  return { v:IND.find(i => i.code === code).def, custom:false, set:false };
+}
+function evalInd(ind, u, t){
+  const v = ind.val(u);
+  if (v == null || t == null || !isFinite(v)) return { v, st:'na' };
+  let st;
+  if (ind.dir === 'high') st = v >= t ? 'met' : v >= t * 0.9 ? 'near' : 'behind';
+  else st = v <= t ? 'met' : (t === 0 ? v <= 1 : v <= t * 1.1) ? 'near' : 'behind';
+  return { v, st };
+}
+const ST_TXT = { met:'محقق', near:'قريب', behind:'متأخر', na:'لا بيانات' };
+const stCell = (ind, e) => `<span class="st st-${e.st}"><bdi dir="ltr" class="num" style="font-weight:700">${ind.f(e.v)}</bdi> ${ST_TXT[e.st]}</span>`;
+function targetsMatrix(M, units){
+  let cnt = { met:0, near:0, behind:0 };
+  const rows = IND.map(ind => {
+    const cells = units.map(u => { const t = tgtFor(M, ind.code, u.names); const e = evalInd(ind, u.s, t.v); if (u.main && cnt[e.st] != null) cnt[e.st]++; return `<td>${stCell(ind, e)}${t.custom ? '<small class="foot" style="display:block">مستهدف خاص</small>' : ''}</td>`; }).join('');
+    const tMain = tgtFor(M, ind.code, units[0].names);
+    return `<tr><td style="white-space:normal;min-width:200px">${esc(ind.name)}</td><td style="white-space:nowrap">${ind.dir === 'high' ? 'لا يقل عن' : 'لا يزيد على'} <bdi dir="ltr" class="num">${ind.f(tMain.v)}</bdi></td>${cells}</tr>`;
+  }).join('');
+  const usingDefaults = !(M.targets || []).length;
+  return `<div class="legend" style="margin-bottom:4px"><span><b>${esc(units[0].label)}:</b></span><span class="st st-met">${cnt.met} محقق</span><span class="st st-near">${cnt.near} قريب</span><span class="st st-behind">${cnt.behind} متأخر</span></div>`
+    + table(['المؤشر', 'المستهدف'].concat(units.map(u => u.link || esc(u.label))), rows, 360 + units.length * 130)
+    + `<p class="foot">${usingDefaults ? 'المستهدفات المعروضة افتراضية لأغراض العرض. حدّد القيم المعتمدة في ورقة «المستهدفات».' : 'المستهدفات من ورقة «المستهدفات». «قريب» تعني ضمن 10% من المستهدف.'}</p>`;
+}
+
+/* ---------- جودة البيانات ---------- */
+function quality(raw){
+  const out = [], counts = {};
+  const add = (sheet, row, msg, sev) => out.push({ sheet, row, msg, sev:sev || 'w' });
+  const cnt = (sheet, n) => { counts[sheet] = n; };
+  const deptNames = new Set(raw.depts.map(d => str(d.name)));
+  const colNames = new Set(raw.depts.map(d => str(d.college)).filter(Boolean));
+  const seenD = new Map();
+  cnt('الأقسام', raw.depts.length);
+  raw.depts.forEach(d => { const n = str(d.name);
+    if (seenD.has(n)) add('الأقسام', d._row, `القسم «${n}» مكرر (ظهر أولاً في الصف ${seenD.get(n)})`, 'c'); else seenD.set(n, d._row);
+    if (!str(d.college)) add('الأقسام', d._row, `القسم «${n}» بلا كلية، فلن يظهر تحت أي كلية`, 'c'); });
+  const ids = new Map(), facDepts = new Set();
+  cnt('الأعضاء', raw.fac.length);
+  raw.fac.forEach(f => { const id = str(f.id), d = str(f.dept), st = str(f.status) || 'على رأس العمل', ld = num(f.load);
+    if (ids.has(id)) add('الأعضاء', f._row, `الرقم الوظيفي ${id} مكرر (ظهر أولاً في الصف ${ids.get(id)})`, 'c'); else ids.set(id, f._row);
+    if (!d) add('الأعضاء', f._row, `العضو ${id} بلا قسم`, 'c'); else { facDepts.add(d); if (!deptNames.has(d)) add('الأعضاء', f._row, `القسم «${d}» غير موجود في ورقة الأقسام (تحقق من الإملاء)`, 'c'); }
+    if (!str(f.rank)) add('الأعضاء', f._row, `العضو ${id}: الرتبة فارغة`);
+    if (!toDate(f.rankDate)) add('الأعضاء', f._row, `العضو ${id}: تاريخ التعيين على الرتبة فارغ أو غير صالح`);
+    if (st === 'على رأس العمل' && ld == null) add('الأعضاء', f._row, `العضو ${id}: العبء التدريسي فارغ وهو على رأس العمل`);
+    if (ld != null && (ld < 0 || ld > 40)) add('الأعضاء', f._row, `العضو ${id}: العبء ${ld} ساعة خارج المدى المعقول`, 'c'); });
+  raw.depts.forEach(d => { if (str(d.name) && !facDepts.has(str(d.name))) add('الأقسام', d._row, `لا يوجد أعضاء مسجلون لقسم «${str(d.name)}»`); });
+  const yNow = TODAY.getFullYear(), seenR = new Set();
+  cnt('الأبحاث', raw.res.length);
+  raw.res.forEach(r => { const id = str(r.id), y = num(r.year), key = id + '|' + str(r.title).toLowerCase();
+    if (!ids.has(id)) add('الأبحاث', r._row, `الرقم الوظيفي ${id} غير موجود في ورقة الأعضاء، فلن يُحتسب البحث لأي قسم`, 'c');
+    if (!y) add('الأبحاث', r._row, 'سنة النشر فارغة'); else if (y > yNow) add('الأبحاث', r._row, `سنة النشر ${y} في المستقبل`, 'c');
+    if (!str(r.q)) add('الأبحاث', r._row, 'الربعية فارغة، فلن يدخل البحث في نسبة Q1 و Q2');
+    if (str(r.title) && seenR.has(key)) add('الأبحاث', r._row, 'البحث نفسه مكرر للعضو نفسه', 'c'); seenR.add(key); });
+  cnt('الطلبات', raw.req.length);
+  raw.req.forEach(q => { const id = str(q.id), d = toDate(q.date), u = toDate(q.updated), st = str(q.status);
+    if (!ids.has(id)) add('الطلبات', q._row, `الطلب ${str(q.no)}: الرقم الوظيفي ${id || '(فارغ)'} غير موجود في ورقة الأعضاء`, 'c');
+    if (!d) add('الطلبات', q._row, `الطلب ${str(q.no)}: تاريخ التقديم فارغ، فلا تُحسب مدة الانتظار`); else if (d > TODAY) add('الطلبات', q._row, `الطلب ${str(q.no)}: تاريخ التقديم في المستقبل`, 'c');
+    if (!st) add('الطلبات', q._row, `الطلب ${str(q.no)}: الحالة فارغة`, 'c');
+    if ((st === 'جديد' || st === 'قيد الاعتماد') && !str(q.stage)) add('الطلبات', q._row, `الطلب ${str(q.no)}: معلّق دون تحديد المرحلة`);
+    if ((st === 'معتمد' || st === 'مرفوض') && !u) add('الطلبات', q._row, `الطلب ${str(q.no)}: مغلق دون تاريخ آخر تحديث`);
+    if (d && u && u < d) add('الطلبات', q._row, `الطلب ${str(q.no)}: تاريخ التحديث قبل تاريخ التقديم`, 'c'); });
+  cnt('الشكاوى', raw.cmp.length);
+  raw.cmp.forEach(c => { const d = toDate(c.date), cl = toDate(c.closed), dp = str(c.dept);
+    if (!deptNames.has(dp)) add('الشكاوى', c._row, `البلاغ ${str(c.no)}: القسم «${dp || '(فارغ)'}» غير موجود في ورقة الأقسام`, 'c');
+    if (!d) add('الشكاوى', c._row, `البلاغ ${str(c.no)}: تاريخ الورود فارغ`);
+    if (str(c.status) === 'مغلقة' && !cl) add('الشكاوى', c._row, `البلاغ ${str(c.no)}: مغلق دون تاريخ إغلاق`);
+    if (d && cl && cl < d) add('الشكاوى', c._row, `البلاغ ${str(c.no)}: تاريخ الإغلاق قبل تاريخ الورود`, 'c'); });
+  cnt('الطلاب', raw.stu.length);
+  raw.stu.forEach(x => { const dp = str(x.dept), n = num(x.count), r = num(x.atRisk);
+    if (!deptNames.has(dp)) add('الطلاب', x._row, `القسم «${dp}» غير موجود في ورقة الأقسام`, 'c');
+    if (n == null) add('الطلاب', x._row, 'عدد الطلاب فارغ', 'c'); else if (r != null && r > n) add('الطلاب', x._row, 'عدد المتعثرين أكبر من عدد الطلاب', 'c'); });
+  cnt('الجداول', raw.sec.length);
+  raw.sec.forEach(x => { const dp = str(x.dept), ins = str(x.inst), lbl = `${str(x.code)} ش${str(x.sec)}`;
+    if (!deptNames.has(dp)) add('الجداول', x._row, `${lbl}: القسم «${dp || '(فارغ)'}» غير موجود في ورقة الأقسام`, 'c');
+    if (ins && !ids.has(ins)) add('الجداول', x._row, `${lbl}: المحاضر ${ins} غير موجود في ورقة الأعضاء`);
+    if (!str(x.day) || !str(x.time) || !str(x.room)) add('الجداول', x._row, `${lbl}: اليوم أو الوقت أو القاعة فارغ، فلا يُكشف التعارض`);
+    if (num(x.cap) == null) add('الجداول', x._row, `${lbl}: السعة فارغة`); });
+  cnt('المجالس', raw.cou.length);
+  raw.cou.forEach(x => { const b = str(x.body);
+    if (!deptNames.has(b) && !colNames.has(b)) add('المجالس', x._row, `الجهة «${b || '(فارغ)'}» ليست قسماً ولا كلية في ورقة الأقسام`, 'c');
+    if (!toDate(x.date)) add('المجالس', x._row, 'تاريخ الجلسة فارغ');
+    if ((num(x.done) || 0) > (num(x.items) || 0)) add('المجالس', x._row, 'البنود المعتمدة أكثر من عدد البنود', 'c'); });
+  const sheets = Object.keys(counts).map(sh => { const L = out.filter(o => o.sheet === sh); const rowsBad = new Set(L.map(o => o.row)).size; return { sheet:sh, rows:counts[sh], issues:L.length, crit:L.filter(o => o.sev === 'c').length, ok:counts[sh] ? 1 - rowsBad / counts[sh] : null, list:L }; });
+  const total = sumOf(sheets, 'rows'), bad = sheets.reduce((s, x) => s + new Set(x.list.map(o => o.row)).size, 0);
+  return { list:out, sheets, total, score:total ? 1 - bad / total : null, crit:out.filter(o => o.sev === 'c').length };
+}
+function viewQuality(M){
+  const Q = M.quality;
+  const tone = Q.score == null ? '' : Q.score >= 0.95 ? 'good' : Q.score >= 0.85 ? 'warn' : 'crit';
+  const rows = Q.sheets.map(x => `<tr><td>${esc(x.sheet)}</td><td class="num">${fmt(x.rows)}</td><td class="num ${x.crit ? 'c' : ''}">${x.crit}</td><td class="num ${x.issues - x.crit ? 'w' : ''}">${x.issues - x.crit}</td><td class="num ${x.ok == null ? '' : x.ok >= 0.95 ? 'g' : 'w'}">${x.rows ? pc(x.ok) : '—'}</td></tr>`).join('');
+  const groups = Q.sheets.filter(x => x.list.length).map(x => {
+    const L = x.list.slice().sort((a, b) => (a.sev === b.sev ? a.row - b.row : a.sev === 'c' ? -1 : 1));
+    return card('q-' + x.sheet, 'ورقة «' + esc(x.sheet) + '»', x.list.length + (x.list.length >= 3 && x.list.length <= 10 ? ' ملاحظات' : ' ملاحظة'),
+      table(['الصف في Excel', 'الملاحظة', 'الأثر'], L.slice(0, 15).map(o => `<tr><td class="num">${o.row || '—'}</td><td style="white-space:normal">${esc(o.msg)}</td><td class="${o.sev === 'c' ? 'c' : 'w'}">${o.sev === 'c' ? 'يغيّر المؤشرات' : 'ناقص'}</td></tr>`).join(''), 560)
+      + (L.length > 15 ? `<p class="foot">و${L.length - 15} ملاحظة أخرى في هذه الورقة.</p>` : ''));
+  }).join('');
+  return `
+  <div class="head"><div><p class="crumbs"><a href="#uni">لوحة الجامعة</a><span aria-hidden="true">‹</span><span>جودة البيانات</span></p><h1>جودة البيانات</h1></div><span class="foot">صحّح الملاحظات في ملف Excel ثم افتحه من جديد</span></div>
+  <section class="kpis" aria-label="ملخص جودة البيانات">
+    ${kpi('صفوف سليمة', pc(Q.score), `من ${fmt(Q.total)} صفاً في كل الأوراق`, tone, 'كل الأوراق')}
+    ${kpi('ملاحظات تغيّر المؤشرات', fmt(Q.crit), 'روابط مفقودة أو تكرار أو قيم غير منطقية', Q.crit ? 'crit' : 'good', 'فحص آلي')}
+    ${kpi('بيانات ناقصة', fmt(Q.list.length - Q.crit), 'حقول فارغة تُضعف بعض المؤشرات', Q.list.length - Q.crit ? 'warn' : 'good', 'فحص آلي')}
+  </section>
+  ${card('q-sum', 'ملخص الأوراق', '', table(['الورقة', 'الصفوف', 'تغيّر المؤشرات', 'ناقصة', 'صفوف سليمة'], rows, 560)
+    + '<p class="foot">«يغيّر المؤشرات»: صف لن يُحتسب أو سيُحتسب خطأً، مثل رقم وظيفي غير موجود أو قسم مكتوب بإملاء مختلف. «ناقص»: حقل فارغ يُضعف مؤشراً بعينه.</p>')}
+  ${groups || card('q-ok', 'لا توجد ملاحظات', '', '<p class="empty">كل الأوراق سليمة ومترابطة.</p>')}`;
 }
 
 /* ---------- المساعد ---------- */
@@ -784,15 +927,15 @@ function route(){
   const M = S.model, app = document.getElementById('app');
   const h = (location.hash || '#uni').slice(1);
   const mc = /^college-(\d+)$/.exec(h), md = /^dept-(\d+)$/.exec(h), mm = /^member-(\d+)$/.exec(h);
-  const level = mc ? 'college' : md ? 'dept' : mm ? 'member' : 'uni';
+  const level = h === 'quality' ? 'quality' : mc ? 'college' : md ? 'dept' : mm ? 'member' : 'uni';
   if (mc) S.last.college = +mc[1];
   if (md) { S.last.dept = +md[1]; if (M && M.dept[+md[1]]) { const ci = M.colleges.findIndex(c => c.name === M.dept[+md[1]].college); if (ci >= 0) S.last.college = ci; } }
   if (mm) { S.last.member = +mm[1]; const f = M && M.members[+mm[1]]; if (f) { const di = M.dept.findIndex(d => d.name === f.dept); if (di >= 0) S.last.dept = di; const ci = M.colleges.findIndex(c => c.name === f.college); if (ci >= 0) S.last.college = ci; } }
   if (mc && M && M.colleges[+mc[1]] && M.dept[S.last.dept] && M.dept[S.last.dept].college !== M.colleges[+mc[1]].name) S.last.dept = M.colleges[+mc[1]].deptIdx[0] || 0;
-  const navs = { uni:'#uni', college:'#college-' + S.last.college, dept:'#dept-' + S.last.dept, member:'#member-' + S.last.member };
+  const navs = { uni:'#uni', college:'#college-' + S.last.college, dept:'#dept-' + S.last.dept, member:'#member-' + S.last.member, quality:'#quality' };
   Object.keys(navs).forEach(l => { const a = document.getElementById('nav-' + l); a.setAttribute('href', navs[l]); if (l === level) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   let html = S.error ? `<p class="err" role="alert">${esc(S.error)}</p>` : '';
-  if (M) html += level === 'college' ? viewCollege(M, +mc[1]) : level === 'dept' ? viewDept(M, +md[1]) : level === 'member' ? viewMember(M, +mm[1]) : viewUniversity(M);
+  if (M) html += level === 'quality' ? viewQuality(M) : level === 'college' ? viewCollege(M, +mc[1]) : level === 'dept' ? viewDept(M, +md[1]) : level === 'member' ? viewMember(M, +mm[1]) : viewUniversity(M);
   app.innerHTML = html;
   const sel = document.getElementById('memberSel');
   if (sel) sel.addEventListener('change', () => { S.reqF = 'all'; location.hash = 'member-' + sel.value; });
@@ -800,7 +943,7 @@ function route(){
   if (M && level === 'member') bindAI(+mm[1]);
   const st = document.getElementById('srcState');
   st.innerHTML = M ? (S.source === 'file'
-    ? `<span class="tag real">بياناتك</span> الملف: <b>${esc(S.fileName)}</b> · ${M.colleges.length} كليات · ${M.dept.length} قسماً · ${M.fac.length} عضواً · ${M.sec.length} شعبة. تُقرأ داخل متصفحك فقط ولا تُرسل لأي جهة.`
+    ? `<span class="tag real">بياناتك</span> الملف: <b>${esc(S.fileName)}</b> · ${M.colleges.length} كليات · ${M.dept.length} قسماً · ${M.fac.length} عضواً · ${M.sec.length} شعبة · <a href="#quality">جودة البيانات ${pc(M.quality.score)}</a>. تُقرأ داخل متصفحك فقط ولا تُرسل لأي جهة.`
     : `<span class="tag sample">بيانات توضيحية</span> ثلاث كليات افتراضية لعرض طريقة العمل. افتح قالب Excel بعد تعبئته لتظهر بياناتك؛ تُقرأ داخل متصفحك فقط.`) : 'جارٍ التحميل…';
 }
 function load(raw, source, name){
