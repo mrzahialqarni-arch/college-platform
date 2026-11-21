@@ -77,7 +77,7 @@ a.lnk{display:inline-block}
 .alert strong{display:block;font-size:15px}
 .meter{height:10px;background:var(--soft);border-radius:999px;overflow:hidden}
 .meter i{display:block;height:100%;border-radius:999px;background:var(--accent)}
-.hbar{display:grid;grid-template-columns:150px minmax(0,1fr) 92px;gap:12px;align-items:center;font-size:14px}
+.hbar{display:grid;grid-template-columns:160px minmax(0,1fr) 130px;gap:12px;align-items:center;font-size:14px}
 .stack{display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--soft)}
 .legend{display:flex;gap:16px;font-size:12px;color:var(--muted);flex-wrap:wrap}
 .legend span{display:inline-flex;align-items:center;gap:6px}
@@ -114,6 +114,9 @@ select.sel{border:1px solid #C6D1CB;border-radius:8px;padding:9px 12px;min-heigh
 .ai-form input{flex:1 1 280px;border:1px solid #C6D1CB;border-radius:8px;padding:10px 14px;min-height:44px;background:var(--surface);color:var(--ink)}
 .ai-mode{font-size:12px;border-radius:999px;padding:3px 10px;font-weight:600;background:var(--soft);color:var(--muted)}
 .ai-mode.live{background:var(--accent-soft);color:var(--accent-ink)}
+tr.tot td{background:var(--accent-soft);font-weight:700}
+.half{flex:1 1 520px}
+.kpis.k4{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
 @media (max-width:520px){.hbar{grid-template-columns:100px minmax(0,1fr) 70px}.mini{min-width:0;width:100%}h1{font-size:23px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -125,7 +128,8 @@ select.sel{border:1px solid #C6D1CB;border-radius:8px;padding:9px 12px;min-heigh
             <div><b>المنصة الموحدة للكليات</b><span>نموذج تجريبي غير رسمي · لأغراض العرض</span></div>
     </div>
     <nav class="levels" aria-label="مستوى العرض">
-      <a id="nav-college" href="#college">لوحة الكلية</a>
+      <a id="nav-uni" href="#uni">لوحة الجامعة</a>
+      <a id="nav-college" href="#college-0">لوحة الكلية</a>
       <a id="nav-dept" href="#dept-0">لوحة القسم</a>
       <a id="nav-member" href="#member-0">صفحة العضو</a>
     </nav>
@@ -160,7 +164,8 @@ const SYS_URL = {
   'الملف الأكاديمي':'https://itcsvc.kku.edu.sa/KKU_AcademicProfile',
   'أعذار الطلاب':'https://itcsvc.kku.edu.sa/KKU_StudentsExcuses'
 };
-const S = { model:null, source:'sample', fileName:'', reqF:'all', error:'', chat:{ key:'', msgs:[] }, busy:false };
+const STAGES = ['دبلوم', 'بكالوريوس', 'ماجستير', 'دكتوراه'];
+const S = { model:null, source:'sample', fileName:'', reqF:'all', error:'', chat:{ key:'', msgs:[] }, busy:false, last:{ college:0, dept:0, member:0 } };
 let SAMPLE = null;
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -172,13 +177,20 @@ const toDate = v => {
   if (typeof v === 'string' && v.trim()) { const d = new Date(v.trim()); return isNaN(d) ? null : d; }
   return null;
 };
+const timeKey = v => {
+  if (v instanceof Date && !isNaN(v)) return String(v.getHours()).padStart(2, '0') + ':' + String(v.getMinutes()).padStart(2, '0');
+  if (typeof v === 'number' && v >= 0 && v < 1) { const m = Math.round(v * 1440); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+  return str(v);
+};
 const fdate = d => d ? d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0') : '';
 const days = (a, b) => Math.max(0, Math.round((b - a) / DAY));
 const f1 = n => n == null || !isFinite(n) ? '—' : n.toFixed(1);
 const f2 = n => n == null || !isFinite(n) ? '—' : n.toFixed(2);
 const fmt = n => n == null ? '—' : Number(n).toLocaleString('en-US');
+const pc = n => n == null || !isFinite(n) ? '—' : Math.round(n * 100) + '%';
 const pct = (n, max) => max > 0 ? Math.max(0, Math.min(100, Math.round(n / max * 100))) : 0;
 const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const sumOf = (a, k) => a.reduce((s, x) => s + (x[k] || 0), 0);
 
 /* ---------- قراءة القالب ---------- */
 function rowsOf(wb, name){ const ws = wb.Sheets[name]; return ws ? XLSX.utils.sheet_to_json(ws, {header:1, defval:'', raw:true}) : null; }
@@ -191,25 +203,72 @@ function mapRows(rows, spec, keyField){
              .filter(o => str(o[keyField]) !== '');
 }
 function fromWorkbook(wb){
-  const need = ['الأعضاء','الأقسام'];
-  for (const n of need) if (!wb.Sheets[n]) throw new Error('الملف لا يطابق القالب: لم أجد ورقة «' + n + '». استخدم قالب بيانات المنصة الموحدة.');
+  for (const n of ['الأعضاء','الأقسام']) if (!wb.Sheets[n]) throw new Error('الملف لا يطابق القالب: لم أجد ورقة «' + n + '». استخدم قالب بيانات المنصة الموحدة.');
   const st = rowsOf(wb, 'الإعدادات') || [];
   const sv = i => num(st[i] && st[i][1]);
-  const set = { year: sv(1) || TODAY.getFullYear(), load: sv(2) || 14, reqSla: sv(3) || 14, cmpSla: sv(4) || 5, promo: sv(5) || 4 };
-  const depts = mapRows(rowsOf(wb,'الأقسام'), {name:'القسم', students:'عدد الطلاب', sections:'الشعب', atRisk:'طلاب في خطر'}, 'name');
-  const fac = mapRows(rowsOf(wb,'الأعضاء'), {id:'الرقم الوظيفي', name:'الاسم', dept:'القسم', rank:'الرتبة', rankDate:'تاريخ التعيين', status:'الحالة', load:'العبء التدريسي', claimed:'طلب مكافأة الوحدات'}, 'id');
-  const res = mapRows(rowsOf(wb,'الأبحاث'), {id:'الرقم الوظيفي', title:'عنوان البحث', doi:'DOI', venue:'المجلة', year:'سنة النشر', q:'الربعية', index:'قاعدة الفهرسة', units:'الوحدات المحتسبة', reward:'حالة المكافأة'}, 'id');
-  const req = mapRows(rowsOf(wb,'الطلبات'), {no:'رقم الطلب', id:'الرقم الوظيفي', sys:'النظام المصدر', type:'نوع الطلب', date:'تاريخ التقديم', stage:'المرحلة الحالية', status:'الحالة', updated:'تاريخ آخر تحديث'}, 'no');
-  const cmp = mapRows(rowsOf(wb,'الشكاوى'), {no:'رقم البلاغ', dept:'القسم', type:'النوع', channel:'قناة الورود', date:'تاريخ الورود', closed:'تاريخ الإغلاق', status:'الحالة'}, 'no');
-  if (!fac.length) throw new Error('ورقة «الأعضاء» فارغة. أضف عضواً واحداً على الأقل ثم أعد فتح الملف.');
-  return {set, depts, fac, res, req, cmp};
+  const set = { year: sv(1) || TODAY.getFullYear(), load: sv(2) || 14, reqSla: sv(3) || 14, cmpSla: sv(4) || 5, promo: sv(5) || 4, minSec: sv(6) || 10 };
+  const raw = {
+    set,
+    depts: mapRows(rowsOf(wb,'الأقسام'), {college:'الكلية', name:'القسم', students:'عدد الطلاب', sections:'الشعب', atRisk:'طلاب في خطر'}, 'name'),
+    fac: mapRows(rowsOf(wb,'الأعضاء'), {id:'الرقم الوظيفي', name:'الاسم', dept:'القسم', rank:'الرتبة', rankDate:'تاريخ التعيين', status:'الحالة', load:'العبء التدريسي', claimed:'طلب مكافأة الوحدات'}, 'id'),
+    res: mapRows(rowsOf(wb,'الأبحاث'), {id:'الرقم الوظيفي', title:'عنوان البحث', doi:'DOI', venue:'المجلة', year:'سنة النشر', q:'الربعية', index:'قاعدة الفهرسة', units:'الوحدات المحتسبة', reward:'حالة المكافأة'}, 'id'),
+    req: mapRows(rowsOf(wb,'الطلبات'), {no:'رقم الطلب', id:'الرقم الوظيفي', sys:'النظام المصدر', type:'نوع الطلب', date:'تاريخ التقديم', stage:'المرحلة الحالية', status:'الحالة', updated:'تاريخ آخر تحديث'}, 'no'),
+    cmp: mapRows(rowsOf(wb,'الشكاوى'), {no:'رقم البلاغ', dept:'القسم', type:'النوع', channel:'قناة الورود', date:'تاريخ الورود', closed:'تاريخ الإغلاق', status:'الحالة'}, 'no'),
+    stu: mapRows(rowsOf(wb,'الطلاب'), {dept:'القسم', stage:'المرحلة الدراسية', level:'المستوى', count:'عدد الطلاب', atRisk:'في خطر', grads:'متوقع تخرجهم'}, 'dept'),
+    sec: mapRows(rowsOf(wb,'الجداول'), {code:'رمز المقرر', course:'اسم المقرر', sec:'الشعبة', dept:'القسم', inst:'الرقم الوظيفي', day:'اليوم', time:'الوقت', room:'القاعة', cap:'السعة', enrolled:'المسجلون'}, 'code'),
+    cou: mapRows(rowsOf(wb,'المجالس'), {council:'المجلس', body:'الجهة', date:'تاريخ الجلسة', items:'عدد البنود', done:'البنود المعتمدة', deferred:'البنود المؤجلة', minutes:'المحضر معتمد'}, 'council')
+  };
+  if (!raw.fac.length) throw new Error('ورقة «الأعضاء» فارغة. أضف عضواً واحداً على الأقل ثم أعد فتح الملف.');
+  return raw;
 }
 
 /* ---------- الحساب ---------- */
+function summarize(X, D, C){
+  const set = X.set, inD = d => D.has(d);
+  const F = X.fac.filter(f => inD(f.dept)), A = F.filter(f => f.active);
+  const R = X.res.filter(r => inD(r.dept) && r.year === set.year);
+  const Q = X.req.filter(q => inD(q.dept)), Cm = X.cmp.filter(c => inD(c.dept));
+  const ST = X.stu.filter(x => inD(x.dept)), SE = X.sec.filter(x => inD(x.dept));
+  const CO = X.cou.filter(c => inD(c.body) || C.has(c.body));
+  const DM = X.deptRows.filter(d => inD(d.name));
+  const loads = A.map(f => f.load).filter(x => x != null);
+  const stages = {}; ST.forEach(x => { stages[x.stage] = (stages[x.stage] || 0) + x.count; });
+  const withCap = SE.filter(x => x.cap != null);
+  const capSum = sumOf(withCap, 'cap'), enr = sumOf(withCap, 'enrolled');
+  const lastC = CO.reduce((m, c) => c.date && (!m || c.date > m) ? c.date : m, null);
+  const o = {
+    all:F.length, fac:A.length,
+    students: ST.length ? sumOf(ST, 'count') : sumOf(DM, 'students'),
+    atRisk: ST.length ? sumOf(ST, 'atRisk') : sumOf(DM, 'atRisk'),
+    grads: sumOf(ST, 'grads'), stages,
+    avgLoad:avg(loads), maxLoad:loads.length ? Math.max.apply(null, loads) : null, minLoad:loads.length ? Math.min.apply(null, loads) : null,
+    overUnclaimed:F.filter(f => f.overUnclaimed).length, promoReady:F.filter(f => f.promoReady).length, profileOk:F.filter(f => f.profileOk).length,
+    pubs:R.length, q1:R.filter(r => r.q === 'Q1').length, q2:R.filter(r => r.q === 'Q2').length,
+    openReq:Q.filter(q => q.open).length, overdueReq:Q.filter(q => q.overdue).length,
+    openCmp:Cm.filter(c => c.open).length, overdueCmp:Cm.filter(c => c.overdue).length,
+    sections: SE.length || sumOf(DM, 'sections'), secFill: capSum ? enr / capSum : null,
+    secIssues:SE.filter(x => x.issue).length, secOver:SE.filter(x => x.over).length, secLow:SE.filter(x => x.low).length,
+    secNoInst:SE.filter(x => x.noInst).length, secClash:SE.filter(x => x.roomClash || x.instClash).length,
+    meetings:CO.filter(c => c.date && days(c.date, TODAY) <= 120).length, meetingsAll:CO.length,
+    pendingItems:sumOf(CO, 'pending'), minutesPending:CO.filter(c => !c.minutes).length, lastMeeting:lastC,
+    members:F, requests:Q, complaints:Cm, secList:SE, couList:CO, stuList:ST
+  };
+  o.ratio = o.fac && o.students ? o.students / o.fac : null;
+  o.perFac = o.fac ? o.pubs / o.fac : null;
+  o.profilePct = F.length ? o.profileOk / F.length : null;
+  o.sinceMeeting = lastC ? days(lastC, TODAY) : null;
+  o.score = o.overdueReq + o.overdueCmp + o.secIssues + o.minutesPending + o.overUnclaimed;
+  return o;
+}
 function build(raw){
-  const {set} = raw;
+  const set = raw.set;
+  const deptRows = raw.depts.map(d => ({ name:str(d.name), college:str(d.college) || 'كلية غير محددة', students:num(d.students), sections:num(d.sections), atRisk:num(d.atRisk) }));
   const fac = raw.fac.map(f => ({ id:str(f.id), name:str(f.name) || str(f.id), dept:str(f.dept), rank:str(f.rank), rankDate:toDate(f.rankDate), status:str(f.status) || 'على رأس العمل', load:num(f.load), claimed:str(f.claimed) === 'نعم' }));
+  const known = new Set(deptRows.map(d => d.name));
+  fac.forEach(f => { if (f.dept && !known.has(f.dept)) { known.add(f.dept); deptRows.push({ name:f.dept, college:'كلية غير محددة', students:null, sections:null, atRisk:null }); } });
+  const colOf = new Map(deptRows.map(d => [d.name, d.college]));
   const byId = new Map(fac.map(f => [f.id, f]));
+  fac.forEach(f => { f.college = colOf.get(f.dept) || 'كلية غير محددة'; });
   const res = raw.res.map(r => ({ id:str(r.id), title:str(r.title), doi:str(r.doi), venue:str(r.venue), year:num(r.year), q:str(r.q), index:str(r.index), units:num(r.units) || 0, reward:str(r.reward) }));
   res.forEach(r => { r.dept = (byId.get(r.id) || {}).dept || ''; });
   const req = raw.req.map(q => {
@@ -229,6 +288,23 @@ function build(raw){
     o.overdue = o.open && o.days != null && o.days > set.cmpSla;
     return o;
   });
+  const stu = raw.stu.map(x => ({ dept:str(x.dept), stage:str(x.stage) || 'بكالوريوس', level:str(x.level), count:num(x.count) || 0, atRisk:num(x.atRisk) || 0, grads:num(x.grads) || 0 }));
+  const sec = raw.sec.map(x => ({ code:str(x.code), course:str(x.course), sec:str(x.sec), dept:str(x.dept), inst:str(x.inst), day:str(x.day), time:timeKey(x.time), room:str(x.room), cap:num(x.cap), enrolled:num(x.enrolled) || 0 }));
+  const k1 = {}, k2 = {};
+  sec.forEach(x => {
+    if (x.room && x.day && x.time) { const k = x.room + '|' + x.day + '|' + x.time; k1[k] = (k1[k] || 0) + 1; }
+    if (x.inst && x.day && x.time) { const k = x.inst + '|' + x.day + '|' + x.time; k2[k] = (k2[k] || 0) + 1; }
+  });
+  sec.forEach(x => {
+    x.noInst = !x.inst; x.over = x.cap != null && x.enrolled > x.cap; x.low = x.enrolled < set.minSec;
+    x.roomClash = !!(x.room && x.day && x.time && k1[x.room + '|' + x.day + '|' + x.time] > 1);
+    x.instClash = !!(x.inst && x.day && x.time && k2[x.inst + '|' + x.day + '|' + x.time] > 1);
+    x.issue = x.noInst ? 'بلا محاضر' : x.roomClash ? 'تعارض في القاعة' : x.instClash ? 'تعارض للمحاضر' : x.over ? 'فوق السعة' : x.low ? 'دون الحد الأدنى' : '';
+    x.instName = x.inst ? ((byId.get(x.inst) || {}).name || x.inst) : '—';
+  });
+  const collegeNames = []; deptRows.forEach(d => { if (collegeNames.indexOf(d.college) < 0) collegeNames.push(d.college); });
+  const cou = raw.cou.map(x => ({ council:str(x.council), body:str(x.body), date:toDate(x.date), items:num(x.items) || 0, done:num(x.done) || 0, deferred:num(x.deferred) || 0, minutes:str(x.minutes) === 'نعم' }));
+  cou.forEach(c => { c.pending = Math.max(0, c.items - c.done); c.college = known.has(c.body) ? colOf.get(c.body) : (collegeNames.indexOf(c.body) >= 0 ? c.body : ''); });
   fac.forEach(f => {
     f.over = f.load != null ? Math.max(0, f.load - set.load) : 0;
     f.yrs = f.rankDate ? (TODAY - f.rankDate) / (365.25 * DAY) : null;
@@ -236,194 +312,286 @@ function build(raw){
     f.pubsY = f.res.filter(r => r.year === set.year).length;
     f.units = f.res.reduce((a, r) => a + r.units, 0);
     f.reqs = req.filter(q => q.id === f.id);
+    f.secs = sec.filter(x => x.inst === f.id);
     f.openReqs = f.reqs.filter(q => q.open).length;
     f.active = f.status === 'على رأس العمل';
     f.overUnclaimed = f.active && f.over > 0 && !f.claimed;
     f.promoReady = f.active && f.rank !== 'أستاذ' && f.rank !== '' && f.yrs != null && f.yrs >= set.promo;
+    f.missing = [];
+    if (!f.rankDate) f.missing.push('تاريخ التعيين');
+    if (f.active && f.load == null) f.missing.push('العبء');
+    if (!f.res.length) f.missing.push('الأبحاث');
+    f.profileOk = f.missing.length === 0;
     f.flags = [];
     if (f.overUnclaimed) f.flags.push('عبء زائد دون مطالبة');
     if (f.promoReady) f.flags.push('راجع أهلية الترقية');
-    if (f.reqs.some(q => q.status === 'مرفوض')) f.flags.push('طلب مرفوض يحتاج متابعة');
+    if (f.reqs.some(q => q.status === 'مرفوض')) f.flags.push('طلب مرفوض');
+    if (f.secs.some(x => x.instClash)) f.flags.push('تعارض في الجدول');
   });
-  const names = raw.depts.map(d => str(d.name));
-  fac.forEach(f => { if (f.dept && names.indexOf(f.dept) < 0) names.push(f.dept); });
-  const dmeta = new Map(raw.depts.map(d => [str(d.name), d]));
-  const dept = names.map(name => {
-    const m = dmeta.get(name) || {};
-    const F = fac.filter(f => f.dept === name), A = F.filter(f => f.active);
-    const R = res.filter(r => r.dept === name && r.year === set.year);
-    const Q = req.filter(q => q.dept === name), C = cmp.filter(c => c.dept === name);
-    const loads = A.map(f => f.load).filter(x => x != null);
-    return { name, all:F.length, fac:A.length, students:num(m.students), sections:num(m.sections), atRisk:num(m.atRisk),
-      avgLoad:avg(loads), maxLoad:loads.length ? Math.max.apply(null, loads) : null, minLoad:loads.length ? Math.min.apply(null, loads) : null,
-      overUnclaimed:F.filter(f => f.overUnclaimed).length, promoReady:F.filter(f => f.promoReady).length,
-      pubs:R.length, q1:R.filter(r => r.q === 'Q1').length, q2:R.filter(r => r.q === 'Q2').length,
-      openReq:Q.filter(q => q.open).length, overdueReq:Q.filter(q => q.overdue).length,
-      openCmp:C.filter(c => c.open).length, overdueCmp:C.filter(c => c.overdue).length, members:F, requests:Q, complaints:C };
+  cmp.forEach(c => { c.college = colOf.get(c.dept) || ''; });
+  const X = { set, fac, res, req, cmp, stu, sec, cou, deptRows };
+  const dept = deptRows.map(d => Object.assign({ name:d.name, college:d.college, meta:d }, summarize(X, new Set([d.name]), new Set())));
+  const colleges = collegeNames.map(n => {
+    const ds = dept.map((d, i) => d.college === n ? i : -1).filter(i => i >= 0);
+    return Object.assign({ name:n, deptIdx:ds }, summarize(X, new Set(ds.map(i => dept[i].name)), new Set([n])));
   });
-  dept.forEach(d => { d.ratio = d.fac && d.students ? d.students / d.fac : null; d.perFac = d.fac ? d.pubs / d.fac : null; });
-  const sum = k => dept.reduce((a, d) => a + (d[k] || 0), 0);
-  const col = { fac:sum('fac'), all:sum('all'), students:sum('students'), atRisk:sum('atRisk'), pubs:sum('pubs'), q1:sum('q1'), q2:sum('q2'),
-    openReq:sum('openReq'), overdueReq:sum('overdueReq'), openCmp:sum('openCmp'), overdueCmp:sum('overdueCmp'),
-    overUnclaimed:sum('overUnclaimed'), promoReady:sum('promoReady'),
-    avgLoad:avg(fac.filter(f => f.active && f.load != null).map(f => f.load)) };
-  col.ratio = col.fac && col.students ? col.students / col.fac : null;
-  col.perFac = col.fac ? col.pubs / col.fac : null;
-  const members = fac.slice().sort((a, b) => (a.dept + a.name).localeCompare(b.dept + b.name, 'ar'));
-  return { set, fac, members, res, req, cmp, dept, col };
+  const uni = summarize(X, new Set(dept.map(d => d.name)), new Set(collegeNames));
+  const members = fac.slice().sort((a, b) => (a.college + a.dept + a.name).localeCompare(b.college + b.dept + b.name, 'ar'));
+  return { set, fac, members, res, req, cmp, stu, sec, cou, dept, colleges, uni };
 }
 
 /* ---------- بيانات توضيحية ---------- */
 function sampleRaw(){
-  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const pick = a => a[Math.floor(rnd() * a.length)];
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
   const Y = TODAY.getFullYear();
-  const D = [['علوم الحاسب',1320,142,41,14],['هندسة الحاسب',910,104,27,11],['نظم المعلومات',840,96,30,10],['الشبكات والاتصالات',560,70,16,8]];
-  const depts = D.map(d => ({name:d[0], students:d[1], sections:d[2], atRisk:d[3]}));
+  const C = [
+    ['كلية علوم الحاسب', [['علوم الحاسب',1320,14,'CS'],['هندسة الحاسب',910,11,'CE'],['نظم المعلومات',840,10,'IS'],['الشبكات والاتصالات',560,8,'NT']]],
+    ['كلية الهندسة', [['الهندسة المدنية',980,12,'CIV'],['الهندسة الكهربائية',870,11,'EE'],['الهندسة الميكانيكية',760,10,'ME']]],
+    ['كلية العلوم', [['الرياضيات',640,10,'MATH'],['الفيزياء',520,9,'PHYS'],['الكيمياء',590,9,'CHEM']]]
+  ];
+  const depts = [], fac = [], res = [], req = [], cmp = [], stu = [], sec = [], cou = [];
   const ranks = ['أستاذ','أستاذ مشارك','أستاذ مساعد','أستاذ مساعد','أستاذ مساعد','محاضر'];
-  const fac = []; let n = 1;
-  D.forEach(d => { for (let i = 0; i < d[4]; i++) {
-    const rank = pick(ranks), status = rnd() < 0.12 ? pick(['ابتعاث','إجازة']) : 'على رأس العمل';
-    const load = status === 'على رأس العمل' ? 8 + Math.floor(rnd() * 11) : '';
-    fac.push({ id:'S' + String(n).padStart(3,'0'), name:'عضو تجريبي ' + String(n).padStart(2,'0'), dept:d[0], rank, status, load,
-      rankDate:new Date(Y - 1 - Math.floor(rnd() * 8), Math.floor(rnd() * 12), 1 + Math.floor(rnd() * 27)), claimed:rnd() < 0.35 ? 'نعم' : 'لا' });
-    n++; } });
-  const res = [];
-  fac.forEach(f => { const k = f.rank === 'محاضر' ? Math.floor(rnd() * 2) : 1 + Math.floor(rnd() * 4);
-    for (let i = 0; i < k; i++) res.push({ id:f.id, title:'بحث توضيحي ' + (res.length + 1), venue:'[المجلة]', year:Y - Math.floor(rnd() * 3), q:pick(['Q1','Q1','Q2','Q2','Q3','Q4']), index:pick(['Scopus','كلاهما']), units:0.5, reward:pick(['لم يُقدَّم','معتمد','قيد الاعتماد']) }); });
   const T = { 'مكافآت التميز':'مكافأة نشر علمي', 'الترقيات':'طلب ترقية', 'حضور مؤتمر':'حضور مؤتمر', 'الخدمة الذاتية':'إجازة أو انتداب', 'أكاديميا':'تعديل درجة', 'الملف الأكاديمي':'تحديث المؤهلات' };
-  const req = [];
-  for (let i = 0; i < 90; i++) {
+  const dayN = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس'], times = ['08:00','10:00','12:00','14:00'];
+  let n = 1;
+  C.forEach(([col, ds]) => {
+    for (let k = 0; k < ri(2, 4); k++) {
+      const items = ri(5, 14), done = Math.max(0, items - ri(0, 4));
+      cou.push({ council:'مجلس الكلية', body:col, date:new Date(TODAY - ri(5, 140) * DAY), items, done, deferred:items - done, minutes:k === 0 && rnd() < 0.6 ? 'لا' : 'نعم' });
+    }
+    ds.forEach(([d, students, nf, pre]) => {
+      depts.push({ college:col, name:d, students, sections:'', atRisk:'' });
+      const ids = [];
+      for (let i = 0; i < nf; i++) {
+        const rank = pick(ranks), status = rnd() < 0.12 ? pick(['ابتعاث','إجازة']) : 'على رأس العمل';
+        const id = 'S' + String(n).padStart(3, '0'); ids.push(status === 'على رأس العمل' ? id : null);
+        fac.push({ id, name:'عضو تجريبي ' + String(n).padStart(3, '0'), dept:d, rank, status, load:status === 'على رأس العمل' ? ri(8, 18) : '',
+          rankDate:rnd() < 0.1 ? '' : new Date(Y - 1 - ri(0, 7), ri(0, 11), ri(1, 27)), claimed:rnd() < 0.35 ? 'نعم' : 'لا' });
+        const kr = rank === 'محاضر' ? ri(0, 1) : ri(0, 4);
+        for (let j = 0; j < kr; j++) res.push({ id, title:'بحث توضيحي ' + (res.length + 1), venue:'[المجلة]', year:Y - ri(0, 2), q:pick(['Q1','Q1','Q2','Q2','Q3','Q4']), index:pick(['Scopus','كلاهما']), units:0.5, reward:pick(['لم يُقدَّم','معتمد','قيد الاعتماد']) });
+        n++;
+      }
+      const act = ids.filter(Boolean);
+      const bach = Math.round(students * 0.93), per = Math.round(bach / 8);
+      for (let lv = 1; lv <= 8; lv++) stu.push({ dept:d, stage:'بكالوريوس', level:'المستوى ' + lv, count:per + ri(-15, 15), atRisk:ri(1, Math.max(2, Math.round(per * 0.05))), grads:lv === 8 ? Math.round(per * 0.8) : 0 });
+      if (rnd() < 0.7) stu.push({ dept:d, stage:'ماجستير', level:'السنة 1-2', count:ri(25, 60), atRisk:ri(0, 4), grads:ri(5, 15) });
+      if (rnd() < 0.4) stu.push({ dept:d, stage:'دكتوراه', level:'السنة 1-4', count:ri(6, 20), atRisk:ri(0, 2), grads:ri(0, 4) });
+      const rooms = ['A', 'B', 'C', 'D', 'E'].map(r => pre + '-' + r + ri(1, 2));
+      for (let i = 0; i < Math.round(nf * 1.4); i++) {
+        const cap = pick([30, 35, 40, 45, 50]);
+        sec.push({ code:pre + ' ' + ri(101, 499), course:'مقرر ' + pre + ' ' + (i + 1), sec:String(ri(1, 3)), dept:d, inst:rnd() < 0.05 ? '' : pick(act) || '', day:pick(dayN), time:pick(times), room:pick(rooms), cap, enrolled:rnd() < 0.08 ? ri(3, 9) : ri(Math.round(cap * 0.5), cap + 4) });
+      }
+      for (let k = 0; k < ri(3, 5); k++) {
+        const items = ri(6, 15), done = Math.max(0, items - ri(0, 4));
+        cou.push({ council:'مجلس القسم', body:d, date:new Date(TODAY - ri(3, 150) * DAY), items, done, deferred:items - done, minutes:k === 0 && rnd() < 0.5 ? 'لا' : 'نعم' });
+      }
+      for (let k = 0; k < ri(1, 5); k++) {
+        const st = pick(['مفتوحة','قيد المعالجة','مغلقة','مغلقة']), date = new Date(TODAY - ri(1, 25) * DAY);
+        cmp.push({ no:'C-' + String(cmp.length + 1).padStart(4, '0'), dept:d, type:pick(['الجداول والاختبارات','رصد الدرجات','التسجيل','المرافق والقاعات','التعامل مع عضو هيئة التدريس']), channel:pick(['باعث مستفيد','لقاء','مباشر']), date, closed:st === 'مغلقة' ? new Date(+date + ri(1, 7) * DAY) : '', status:st });
+      }
+    });
+  });
+  for (let i = 0; i < 260; i++) {
     const f = pick(fac), sys = pick(Object.keys(T)), status = pick(['جديد','قيد الاعتماد','قيد الاعتماد','معتمد','مرفوض']);
-    const date = new Date(TODAY - (2 + Math.floor(rnd() * 60)) * DAY);
+    const date = new Date(TODAY - ri(2, 60) * DAY);
     req.push({ no:String(14000 + i), id:f.id, sys, type:T[sys], date, stage:status === 'معتمد' ? 'منتهٍ' : pick(['مجلس القسم','مجلس القسم','مجلس الكلية','المجلس العلمي']), status,
-      updated:status === 'معتمد' || status === 'مرفوض' ? new Date(+date + (3 + Math.floor(rnd() * 20)) * DAY) : '' });
+      updated:status === 'معتمد' || status === 'مرفوض' ? new Date(+date + ri(3, 22) * DAY) : '' });
   }
-  const cmp = [];
-  for (let i = 0; i < 34; i++) { const st = pick(['مفتوحة','قيد المعالجة','مغلقة','مغلقة']); const date = new Date(TODAY - (1 + Math.floor(rnd() * 25)) * DAY);
-    cmp.push({ no:'C-' + String(i + 1).padStart(4,'0'), dept:pick(D)[0], type:pick(['الجداول والاختبارات','رصد الدرجات','التسجيل','المرافق والقاعات','التعامل مع عضو هيئة التدريس']), channel:pick(['باعث مستفيد','لقاء','مباشر']), date, closed:st === 'مغلقة' ? new Date(+date + (1 + Math.floor(rnd() * 7)) * DAY) : '', status:st }); }
-  const z = n2 => n2 === '' ? '' : n2;
-  return { set:{ year:Y, load:14, reqSla:14, cmpSla:5, promo:4 }, depts, fac:fac.map(f => ({...f, load:z(f.load)})), res, req, cmp };
+  return { set:{ year:Y, load:14, reqSla:14, cmpSla:5, promo:4, minSec:10 }, depts, fac, res, req, cmp, stu, sec, cou };
 }
 
-/* ---------- العرض ---------- */
+/* ---------- أجزاء العرض ---------- */
 const kpi = (l, v, n, tone, src) => `<div class="kpi ${tone || ''}"><span class="l">${esc(l)}</span><span class="v num">${v}</span><span class="n">${n}</span><span class="src" style="align-self:flex-start">${esc(src)}</span></div>`;
 const alertBox = (n, t, p, tone) => `<div class="alert ${tone}"><span class="big num">${n}</span><div><strong>${esc(t)}</strong><p>${esc(p)}</p></div></div>`;
 const vsCol = (v, c, higherBetter) => v == null || c == null ? '' : ((higherBetter ? v >= c : v <= c) ? 'g' : 'w');
+const lateTag = (n, word) => n ? ` <span class="c">(${n} ${word})</span>` : '';
+const card = (id, title, src, inner, cls) => `<section class="card ${cls || ''}" aria-labelledby="${id}"><div class="card-h"><h2 id="${id}">${title}</h2>${src ? `<span class="src">${esc(src)}</span>` : ''}</div>${inner}</section>`;
+const table = (head, rows, minW) => `<div class="tbl-wrap"><table style="min-width:${minW || 720}px"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+const totalRow = cells => `<tr class="tot">${cells.map(c => `<td class="num">${c}</td>`).join('')}</tr>`;
 
-function viewCollege(M){
-  const c = M.col, s = M.set;
-  const rows = M.dept.map((d, i) => `<tr>
-    <td><a class="lnk" href="#dept-${i}">${esc(d.name)}</a></td>
-    <td class="num">${d.fac}</td><td class="num">${fmt(d.students)}</td>
-    <td class="num ${vsCol(d.ratio, c.ratio, false)}">${f1(d.ratio)}</td>
-    <td class="num">${f1(d.avgLoad)}</td>
-    <td class="num">${d.pubs}</td><td class="num ${vsCol(d.perFac, c.perFac, true)}">${f2(d.perFac)}</td>
-    <td class="num">${d.openReq}${d.overdueReq ? ` <span class="c">(${d.overdueReq} متأخر)</span>` : ''}</td>
-    <td class="num">${d.openCmp}${d.overdueCmp ? ` <span class="c">(${d.overdueCmp} متأخرة)</span>` : ''}</td>
-    <td class="num ${d.overUnclaimed ? 'w' : ''}">${d.overUnclaimed}</td></tr>`).join('');
+function stagesTable(units, nameCell){
+  const rows = units.map(u => `<tr><td>${nameCell(u)}</td>${STAGES.map(s => `<td class="num">${u.stages[s] ? fmt(u.stages[s]) : '—'}</td>`).join('')}<td class="num"><b>${fmt(u.students)}</b></td><td class="num ${u.atRisk ? 'w' : ''}">${fmt(u.atRisk)}</td><td class="num">${fmt(u.grads)}</td></tr>`).join('');
+  return table(['الجهة'].concat(STAGES, ['الإجمالي', 'في خطر أكاديمي', 'متوقع تخرجهم']), rows, 760);
+}
+function scheduleTable(units, nameCell){
+  const rows = units.map(u => `<tr><td>${nameCell(u)}</td><td class="num">${fmt(u.sections)}</td><td class="num">${pc(u.secFill)}</td><td class="num ${u.secOver ? 'w' : ''}">${u.secOver}</td><td class="num ${u.secLow ? 'w' : ''}">${u.secLow}</td><td class="num ${u.secNoInst ? 'c' : ''}">${u.secNoInst}</td><td class="num ${u.secClash ? 'c' : ''}">${u.secClash}</td></tr>`).join('');
+  return table(['الجهة', 'الشعب', 'نسبة الامتلاء', 'فوق السعة', 'دون الحد الأدنى', 'بلا محاضر', 'تعارضات'], rows, 720);
+}
+function councilTable(units, nameCell){
+  const rows = units.map(u => `<tr><td>${nameCell(u)}</td><td class="num">${u.meetings}</td><td class="num ${u.sinceMeeting != null && u.sinceMeeting > 45 ? 'w' : ''}">${u.sinceMeeting == null ? '—' : u.sinceMeeting + ' يوماً'}</td><td class="num ${u.pendingItems ? 'w' : ''}">${u.pendingItems}</td><td class="num ${u.minutesPending ? 'c' : ''}">${u.minutesPending}</td></tr>`).join('');
+  return table(['الجهة', 'جلسات آخر 120 يوماً', 'آخر جلسة منذ', 'بنود لم تُعتمد', 'محاضر غير معتمدة'], rows, 520);
+}
+function researchBars(units){
+  const max = Math.max(1, ...units.map(u => u.pubs));
+  return units.map(u => `<div class="hbar"><span>${esc(u.name)}</span><div class="stack" role="img" aria-label="${esc(u.name)}: ${u.q1} في Q1 و ${u.q2} في Q2 و ${u.pubs - u.q1 - u.q2} أخرى"><i style="width:${pct(u.q1, max)}%;background:#0F6B4F"></i><i style="width:${pct(u.q2, max)}%;background:#5FA88B"></i><i style="width:${pct(u.pubs - u.q1 - u.q2, max)}%;background:#B9D7C9"></i></div><span class="num">${u.pubs} · ${f2(u.perFac)}/عضو</span></div>`).join('')
+    + '<div class="legend"><span><i style="background:#0F6B4F"></i>Q1</span><span><i style="background:#5FA88B"></i>Q2</span><span><i style="background:#B9D7C9"></i>Q3، Q4 وغير مصنفة</span></div>';
+}
+function complaintTypes(list, cmpSla){
+  const types = {}; list.filter(x => x.open).forEach(x => { const t = types[x.type] || (types[x.type] = {n:0, o:0}); t.n++; if (x.overdue) t.o++; });
+  const tl = Object.entries(types).sort((a, b) => b[1].n - a[1].n);
+  const closedDays = avg(list.filter(x => !x.open && x.days != null).map(x => x.days));
+  return (tl.length ? tl.map(([t, v]) => `<div class="list-row"><span>${esc(t)}</span><span class="num">${v.n} مفتوحة${v.o ? ` · <span class="c">${v.o} متأخرة</span>` : ''}</span></div>`).join('') : '<p class="empty">لا توجد شكاوى مفتوحة.</p>')
+    + `<p class="foot">متوسط زمن المعالجة للمغلقة: <b>${closedDays == null ? '—' : f1(closedDays) + ' يوم'}</b> · المهلة ${cmpSla} أيام</p>`;
+}
+function stagePipeline(reqs){
   const stages = ['مجلس القسم','مجلس الكلية','المجلس العلمي','الموارد البشرية'].map(st => {
-    const Q = M.req.filter(q => q.open && q.stage === st); const w = avg(Q.map(q => q.wait).filter(x => x != null));
-    return { st, n:Q.length, w };
+    const Q = reqs.filter(q => q.open && q.stage === st); return { st, n:Q.length, w:avg(Q.map(q => q.wait).filter(x => x != null)) };
   }).filter(x => x.n);
-  const maxSt = Math.max(1, ...stages.map(x => x.n));
-  const maxPub = Math.max(1, ...M.dept.map(d => d.pubs));
-  const types = {}; M.cmp.filter(x => x.open).forEach(x => { const t = types[x.type] || (types[x.type] = {n:0, o:0}); t.n++; if (x.overdue) t.o++; });
-  const tlist = Object.entries(types).sort((a, b) => b[1].n - a[1].n);
-  const closedDays = avg(M.cmp.filter(x => !x.open && x.days != null).map(x => x.days));
+  const max = Math.max(1, ...stages.map(x => x.n));
+  return stages.length ? stages.map(x => `<div><div class="list-row" style="border:0;padding:4px 0"><b>${esc(x.st)}</b><span class="num">${x.n} طلباً · متوسط ${x.w == null ? '—' : Math.round(x.w)} يوماً</span></div><div class="meter"><i style="width:${pct(x.n, max)}%"></i></div></div>`).join('') : '<p class="empty">لا توجد طلبات معلّقة.</p>';
+}
+function issueSections(list, limit){
+  const L = list.filter(x => x.issue).sort((a, b) => (a.issue > b.issue ? 1 : -1)).slice(0, limit || 12);
+  if (!L.length) return '<p class="empty">لا توجد شعب بها مشكلة.</p>';
+  return table(['المقرر', 'الشعبة', 'المحاضر', 'الموعد', 'القاعة', 'المسجلون/السعة', 'المشكلة'],
+    L.map(x => `<tr><td>${esc(x.code)} · ${esc(x.course)}</td><td class="num">${esc(x.sec)}</td><td>${esc(x.instName)}</td><td>${esc(x.day)} <bdi dir="ltr">${esc(x.time)}</bdi></td><td><bdi dir="ltr">${esc(x.room)}</bdi></td><td class="num">${x.enrolled}/${x.cap == null ? '—' : x.cap}</td><td class="${/تعارض|بلا/.test(x.issue) ? 'c' : 'w'}">${esc(x.issue)}</td></tr>`).join(''), 760);
+}
+function meetingsList(list, limit){
+  const L = list.slice().sort((a, b) => (b.date || 0) - (a.date || 0)).slice(0, limit || 8);
+  if (!L.length) return '<p class="empty">لا توجد جلسات مسجلة.</p>';
+  return table(['المجلس', 'الجهة', 'التاريخ', 'البنود', 'لم تُعتمد', 'المحضر'],
+    L.map(c => `<tr><td>${esc(c.council)}</td><td>${esc(c.body)}</td><td><bdi dir="ltr">${fdate(c.date)}</bdi></td><td class="num">${c.items}</td><td class="num ${c.pending ? 'w' : ''}">${c.pending}</td><td class="${c.minutes ? 'g' : 'c'}">${c.minutes ? 'معتمد' : 'غير معتمد'}</td></tr>`).join(''), 640);
+}
+
+/* ---------- لوحة الجامعة ---------- */
+function viewUniversity(M){
+  const u = M.uni, s = M.set;
+  const link = (i, name) => `<a class="lnk" href="#college-${i}">${esc(name)}</a>`;
+  const cols = M.colleges.map((c, i) => Object.assign({ i }, c));
+  const rows = cols.map(c => `<tr><td>${link(c.i, c.name)}</td><td class="num">${c.deptIdx.length}</td><td class="num">${c.fac}</td><td class="num">${fmt(c.students)}</td>
+    <td class="num ${vsCol(c.ratio, u.ratio, false)}">${f1(c.ratio)}</td><td class="num ${vsCol(c.perFac, u.perFac, true)}">${f2(c.perFac)}</td>
+    <td class="num ${vsCol(c.profilePct, u.profilePct, true)}">${pc(c.profilePct)}</td>
+    <td class="num">${c.openReq}${lateTag(c.overdueReq, 'متأخر')}</td><td class="num">${c.openCmp}${lateTag(c.overdueCmp, 'متأخرة')}</td>
+    <td class="num ${c.secIssues ? 'w' : ''}">${c.secIssues}</td><td class="num ${c.pendingItems ? 'w' : ''}">${c.pendingItems}</td></tr>`).join('');
+  const watch = M.dept.map((d, i) => Object.assign({ i }, d)).filter(d => d.score > 0).sort((a, b) => b.score - a.score).slice(0, 6);
+  const quietCols = cols.filter(c => c.sinceMeeting == null || c.sinceMeeting > 60).length;
   return `
-  <div class="head"><div><p class="crumbs">آخر تحميل للبيانات: ${esc(TODAY.toLocaleDateString('ar-SA-u-ca-islamic-umalqura'))}</p><h1>لوحة مؤشرات الكلية</h1></div><span class="foot">مؤشرات سنة ${s.year} · النصاب ${s.load} ساعة · مهلة الطلبات ${s.reqSla} يوماً</span></div>
-  <section class="kpis" aria-label="مؤشرات الكلية">
-    ${kpi('أعضاء على رأس العمل', c.fac, `من ${c.all} عضواً مسجلاً`, '', 'الأعضاء ← ESS')}
-    ${kpi('الطلاب المنتظمون', fmt(c.students), `طالب لكل عضو: ${f1(c.ratio)}`, '', 'الأقسام ← أكاديميا')}
-    ${kpi('أبحاث ' + s.year, c.pubs, `${f2(c.perFac)} لكل عضو · منها Q1/Q2: ${c.q1 + c.q2}`, 'good', 'الأبحاث')}
-    ${kpi('طلبات معلّقة', c.openReq, `${c.overdueReq} تجاوزت ${s.reqSla} يوماً`, c.overdueReq ? 'warn' : '', 'الطلبات')}
-    ${kpi('شكاوى مفتوحة', c.openCmp, `${c.overdueCmp} تجاوزت المهلة`, c.overdueCmp ? 'crit' : '', 'الشكاوى')}
-    ${kpi('طلاب في خطر أكاديمي', fmt(c.atRisk), 'غياب مرتفع أو معدل منخفض', c.atRisk ? 'warn' : '', 'الأقسام ← أكاديميا')}
+  <div class="head"><div><p class="crumbs">آخر تحميل للبيانات: ${esc(TODAY.toLocaleDateString('ar-SA-u-ca-islamic-umalqura'))}</p><h1>لوحة الجامعة</h1></div><span class="foot">${M.colleges.length} كليات · ${M.dept.length} قسماً · مؤشرات سنة ${s.year}</span></div>
+  <section class="kpis k4" aria-label="مؤشرات الجامعة">
+    ${kpi('أعضاء على رأس العمل', fmt(u.fac), `اكتمال ملفاتهم: ${pc(u.profilePct)}`, '', 'الأعضاء')}
+    ${kpi('الطلاب', fmt(u.students), `بكالوريوس ${fmt(u.stages['بكالوريوس'] || 0)} · دراسات عليا ${fmt((u.stages['ماجستير'] || 0) + (u.stages['دكتوراه'] || 0))}`, '', 'الطلاب')}
+    ${kpi('أبحاث ' + s.year, fmt(u.pubs), `${f2(u.perFac)} لكل عضو · Q1/Q2: ${u.q1 + u.q2}`, 'good', 'الأبحاث')}
+    ${kpi('الشعب الدراسية', fmt(u.sections), `امتلاء ${pc(u.secFill)} · ${u.secIssues} بها مشكلة`, u.secIssues ? 'warn' : '', 'الجداول')}
+    ${kpi('طلبات معلّقة', fmt(u.openReq), `${u.overdueReq} تجاوزت ${s.reqSla} يوماً`, u.overdueReq ? 'warn' : '', 'الطلبات')}
+    ${kpi('شكاوى مفتوحة', fmt(u.openCmp), `${u.overdueCmp} تجاوزت المهلة`, u.overdueCmp ? 'crit' : '', 'الشكاوى')}
+    ${kpi('بنود مجالس لم تُعتمد', fmt(u.pendingItems), `${u.minutesPending} محضراً غير معتمد`, u.minutesPending ? 'warn' : '', 'المجالس')}
+    ${kpi('طلاب في خطر أكاديمي', fmt(u.atRisk), `متوقع تخرجهم هذا الفصل: ${fmt(u.grads)}`, u.atRisk ? 'warn' : '', 'الطلاب')}
   </section>
-  <section class="card" aria-labelledby="h-cmp"><div class="card-h"><h2 id="h-cmp">مقارنة الأقسام</h2><span class="foot">اختر قسماً لفتح لوحته · الأخضر أفضل من متوسط الكلية والبرتقالي أسوأ</span></div>
-    <div class="tbl-wrap"><table><thead><tr><th>القسم</th><th>أعضاء</th><th>طلاب</th><th>طالب/عضو</th><th>متوسط العبء</th><th>أبحاث ${s.year}</th><th>بحث/عضو</th><th>طلبات معلّقة</th><th>شكاوى مفتوحة</th><th>عبء زائد دون مطالبة</th></tr></thead>
-    <tbody>${rows}<tr style="background:var(--accent-soft);font-weight:700"><td>إجمالي الكلية</td><td class="num">${c.fac}</td><td class="num">${fmt(c.students)}</td><td class="num">${f1(c.ratio)}</td><td class="num">${f1(c.avgLoad)}</td><td class="num">${c.pubs}</td><td class="num">${f2(c.perFac)}</td><td class="num">${c.openReq}</td><td class="num">${c.openCmp}</td><td class="num">${c.overUnclaimed}</td></tr></tbody></table></div>
-  </section>
+  ${card('h-ucol', 'مقارنة الكليات', 'كل الأوراق', `<p class="foot" style="margin:0">اختر كلية لفتح لوحتها · الأخضر أفضل من متوسط الجامعة والبرتقالي أسوأ</p>` + table(['الكلية', 'أقسام', 'أعضاء', 'طلاب', 'طالب/عضو', 'بحث/عضو', 'اكتمال الملفات', 'طلبات معلّقة', 'شكاوى مفتوحة', 'شعب بها مشكلة', 'بنود مجالس معلّقة'], rows +
+    totalRow(['إجمالي الجامعة', M.dept.length, u.fac, fmt(u.students), f1(u.ratio), f2(u.perFac), pc(u.profilePct), u.openReq, u.openCmp, u.secIssues, u.pendingItems]), 1100))}
   <div class="row">
-    <section class="card grow" aria-labelledby="h-al"><div class="card-h"><h2 id="h-al">تتطلب انتباه العمادة</h2><span class="src">محسوبة آلياً</span></div>
-      ${alertBox(c.overUnclaimed, 'أعضاء تجاوز عبؤهم النصاب ولم يطالبوا بمكافأة الوحدات الزائدة', 'العبء من أكاديميا وحالة الطلب من الخدمة الذاتية.', 'warn')}
-      ${alertBox(c.promoReady, 'أعضاء أمضوا ' + s.promo + ' سنوات فأكثر على رتبتهم', 'راجع أهليتهم للترقية مقابل الوحدات البحثية المحتسبة.', 'good')}
-      ${alertBox(c.overdueCmp, 'شكاوى تجاوزت مهلة المعالجة (' + s.cmpSla + ' أيام)', 'تظهر تفاصيلها في لوحة كل قسم.', 'crit')}
-      ${alertBox(c.overdueReq, 'طلبات أعضاء معلّقة أكثر من ' + s.reqSla + ' يوماً', 'موزعة على المجالس كما في البطاقة المجاورة.', 'warn')}
-    </section>
-    <section class="card side" aria-labelledby="h-st"><h2 id="h-st">الطلبات المعلّقة لدى المجالس</h2>
-      ${stages.length ? stages.map(x => `<div><div class="list-row" style="border:0;padding:4px 0"><b>${esc(x.st)}</b><span class="num">${x.n} طلباً · متوسط ${x.w == null ? '—' : Math.round(x.w)} يوماً</span></div><div class="meter"><i style="width:${pct(x.n, maxSt)}%"></i></div></div>`).join('') : '<p class="empty">لا توجد طلبات معلّقة.</p>'}
-    </section>
+    ${card('h-ual', 'تتطلب انتباه الجامعة', 'محسوبة آلياً',
+      alertBox(u.secClash, 'شعب بها تعارض في القاعة أو المحاضر', 'من جداول كل الكليات؛ تفاصيلها في لوحة كل قسم.', 'crit') +
+      alertBox(u.overdueCmp, 'شكاوى طلاب تجاوزت مهلة المعالجة', 'موزعة على الكليات في جدول المقارنة.', 'crit') +
+      alertBox(u.overUnclaimed, 'أعضاء تجاوزوا النصاب ولم يطالبوا بالمكافأة', 'مستحقات مالية معلّقة لا يعلم بها أصحابها.', 'warn') +
+      alertBox(u.minutesPending, 'محاضر مجالس غير معتمدة', quietCols ? `و${quietCols} كليات لم يُعقد مجلسها منذ أكثر من 60 يوماً.` : 'كل الكليات عقدت مجلساً خلال آخر 60 يوماً.', 'warn') +
+      alertBox(u.promoReady, 'أعضاء أمضوا مدة الترقية على رتبهم', 'فرصة لمتابعة مسارهم المهني مبكراً.', 'good'), 'grow')}
+    ${card('h-uwatch', 'أقسام تحتاج متابعة', '', watch.length ? watch.map(d => `<div class="list-row"><span><a class="lnk" href="#dept-${d.i}">${esc(d.name)}</a><br><small class="foot">${esc(d.college)}</small></span><span class="foot" style="text-align:left">${[d.overdueReq && d.overdueReq + ' طلب متأخر', d.overdueCmp && d.overdueCmp + ' شكوى متأخرة', d.secIssues && d.secIssues + ' شعبة بمشكلة', d.minutesPending && d.minutesPending + ' محضر'].filter(Boolean).join(' · ')}</span></div>`).join('') : '<p class="empty">لا توجد أقسام بمؤشرات متأخرة.</p>', 'side')}
+  </div>
+  ${card('h-ustu', 'الطلاب حسب الكلية والمرحلة الدراسية', 'الطلاب ← أكاديميا', stagesTable(cols, c => link(c.i, c.name)))}
+  <div class="row">
+    ${card('h-usch', 'سلامة الجداول الدراسية', 'الجداول ← أكاديميا', scheduleTable(cols, c => link(c.i, c.name)), 'half')}
+    ${card('h-ucou', 'المجالس', 'المجالس', councilTable(cols, c => link(c.i, c.name)), 'half')}
   </div>
   <div class="row">
-    <section class="card grow" aria-labelledby="h-rs"><div class="card-h"><h2 id="h-rs">الإنتاج العلمي حسب القسم · ${s.year}</h2><span class="src">الأبحاث</span></div>
-      ${M.dept.map(d => `<div class="hbar"><span>${esc(d.name)}</span><div class="stack" role="img" aria-label="${esc(d.name)}: ${d.q1} في Q1 و ${d.q2} في Q2 و ${d.pubs - d.q1 - d.q2} أخرى"><i style="width:${pct(d.q1, maxPub)}%;background:#0F6B4F"></i><i style="width:${pct(d.q2, maxPub)}%;background:#5FA88B"></i><i style="width:${pct(d.pubs - d.q1 - d.q2, maxPub)}%;background:#B9D7C9"></i></div><span class="num">${d.pubs} بحثاً</span></div>`).join('')}
-      <div class="legend"><span><i style="background:#0F6B4F"></i>Q1</span><span><i style="background:#5FA88B"></i>Q2</span><span><i style="background:#B9D7C9"></i>Q3، Q4 وغير مصنفة</span></div>
-    </section>
-    <section class="card side" aria-labelledby="h-cp"><div class="card-h"><h2 id="h-cp">الشكاوى المفتوحة حسب النوع</h2><span class="src">الشكاوى</span></div>
-      ${tlist.length ? tlist.map(([t, v]) => `<div class="list-row"><span>${esc(t)}</span><span class="num">${v.n} مفتوحة${v.o ? ` · <span class="c">${v.o} متأخرة</span>` : ''}</span></div>`).join('') : '<p class="empty">لا توجد شكاوى مفتوحة.</p>'}
-      <p class="foot">متوسط زمن المعالجة للمغلقة: <b>${closedDays == null ? '—' : f1(closedDays) + ' يوم'}</b> · المهلة ${s.cmpSla} أيام</p>
-    </section>
+    ${card('h-ures', 'الإنتاج العلمي حسب الكلية · ' + s.year, 'الأبحاث', researchBars(cols), 'grow')}
+    ${card('h-ucmp', 'الشكاوى المفتوحة حسب النوع', 'الشكاوى', complaintTypes(M.cmp, s.cmpSla), 'side')}
   </div>`;
 }
 
+/* ---------- لوحة الكلية ---------- */
+function viewCollege(M, ci){
+  const c = M.colleges[ci]; if (!c) return '<p class="empty">لا توجد كليات في الملف. أضف عمود الكلية في ورقة «الأقسام».</p>';
+  const u = M.uni, s = M.set;
+  const D = c.deptIdx.map(i => Object.assign({ i }, M.dept[i]));
+  const dl = d => `<a class="lnk" href="#dept-${d.i}">${esc(d.name)}</a>`;
+  const pills = M.colleges.map((x, j) => `<a class="pill" href="#college-${j}" ${j === ci ? 'aria-current="page"' : ''}>${esc(x.name)}</a>`).join('');
+  const rows = D.map(d => `<tr><td>${dl(d)}</td><td class="num">${d.fac}</td><td class="num">${fmt(d.students)}</td><td class="num ${vsCol(d.ratio, c.ratio, false)}">${f1(d.ratio)}</td><td class="num">${f1(d.avgLoad)}</td>
+    <td class="num">${d.pubs}</td><td class="num ${vsCol(d.perFac, c.perFac, true)}">${f2(d.perFac)}</td><td class="num">${pc(d.profilePct)}</td>
+    <td class="num">${d.openReq}${lateTag(d.overdueReq, 'متأخر')}</td><td class="num">${d.openCmp}${lateTag(d.overdueCmp, 'متأخرة')}</td><td class="num ${d.overUnclaimed ? 'w' : ''}">${d.overUnclaimed}</td></tr>`).join('');
+  return `
+  <div class="head"><div><p class="crumbs"><a href="#uni">لوحة الجامعة</a><span aria-hidden="true">‹</span><span>لوحة الكلية</span></p><h1>${esc(c.name)}</h1></div><nav class="pills" aria-label="اختيار الكلية">${pills}</nav></div>
+  <section class="kpis" aria-label="مؤشرات الكلية">
+    ${kpi('أعضاء على رأس العمل', c.fac, `من ${c.all} · اكتمال الملفات ${pc(c.profilePct)}`, '', 'الأعضاء')}
+    ${kpi('الطلاب', fmt(c.students), `طالب لكل عضو ${f1(c.ratio)} · الجامعة ${f1(u.ratio)}`, vsCol(c.ratio, u.ratio, false) === 'w' ? 'warn' : '', 'الطلاب')}
+    ${kpi('أبحاث ' + s.year, c.pubs, `${f2(c.perFac)} لكل عضو · الجامعة ${f2(u.perFac)}`, vsCol(c.perFac, u.perFac, true) === 'w' ? 'warn' : 'good', 'الأبحاث')}
+    ${kpi('الشعب', fmt(c.sections), `امتلاء ${pc(c.secFill)} · ${c.secIssues} بها مشكلة`, c.secIssues ? 'warn' : '', 'الجداول')}
+    ${kpi('طلبات معلّقة', c.openReq, `${c.overdueReq} متأخرة`, c.overdueReq ? 'warn' : '', 'الطلبات')}
+    ${kpi('شكاوى مفتوحة', c.openCmp, `${c.overdueCmp} متأخرة`, c.overdueCmp ? 'crit' : '', 'الشكاوى')}
+  </section>
+  ${card('h-cmp', 'مقارنة الأقسام', '', `<p class="foot" style="margin:0">اختر قسماً لفتح لوحته · المقارنة بمتوسط الكلية</p>` + table(['القسم', 'أعضاء', 'طلاب', 'طالب/عضو', 'متوسط العبء', 'أبحاث ' + s.year, 'بحث/عضو', 'اكتمال الملفات', 'طلبات معلّقة', 'شكاوى مفتوحة', 'عبء زائد دون مطالبة'], rows +
+    totalRow(['إجمالي الكلية', c.fac, fmt(c.students), f1(c.ratio), f1(c.avgLoad), c.pubs, f2(c.perFac), pc(c.profilePct), c.openReq, c.openCmp, c.overUnclaimed]), 1000))}
+  <div class="row">
+    ${card('h-cal', 'تتطلب انتباه العمادة', 'محسوبة آلياً',
+      alertBox(c.overUnclaimed, 'أعضاء تجاوز عبؤهم النصاب ولم يطالبوا بالمكافأة', 'العبء من أكاديميا وحالة الطلب من الخدمة الذاتية.', 'warn') +
+      alertBox(c.secClash + c.secNoInst, 'شعب بتعارض أو بلا محاضر', 'تفاصيلها في لوحة كل قسم.', 'crit') +
+      alertBox(c.overdueCmp, 'شكاوى تجاوزت مهلة المعالجة (' + s.cmpSla + ' أيام)', 'تظهر تفاصيلها في لوحة كل قسم.', 'crit') +
+      alertBox(c.promoReady, 'أعضاء أمضوا ' + s.promo + ' سنوات فأكثر على رتبتهم', 'راجع أهليتهم للترقية مقابل الوحدات البحثية المحتسبة.', 'good'), 'grow')}
+    ${card('h-cst', 'الطلبات المعلّقة لدى المجالس', 'الطلبات', stagePipeline(c.requests), 'side')}
+  </div>
+  ${card('h-cstu', 'الطلاب حسب القسم والمرحلة الدراسية', 'الطلاب', stagesTable(D, dl))}
+  <div class="row">
+    ${card('h-csch', 'سلامة الجداول حسب القسم', 'الجداول', scheduleTable(D, dl), 'half')}
+    ${card('h-ccou', 'مجالس الكلية وأقسامها', 'المجالس', councilTable([Object.assign({}, c, { name:'مجلس الكلية', couList:c.couList.filter(x => x.body === c.name) })].map(x => Object.assign(x, (() => { const L = x.couList; const last = L.reduce((m, k) => k.date && (!m || k.date > m) ? k.date : m, null); return { meetings:L.filter(k => k.date && days(k.date, TODAY) <= 120).length, pendingItems:sumOf(L, 'pending'), minutesPending:L.filter(k => !k.minutes).length, sinceMeeting:last ? days(last, TODAY) : null }; })())).concat(D), d => d.i == null ? '<b>مجلس الكلية</b>' : dl(d)), 'half')}
+  </div>
+  <div class="row">
+    ${card('h-crs', 'الإنتاج العلمي حسب القسم · ' + s.year, 'الأبحاث', researchBars(D), 'grow')}
+    ${card('h-ccp', 'الشكاوى المفتوحة حسب النوع', 'الشكاوى', complaintTypes(c.complaints, s.cmpSla), 'side')}
+  </div>`;
+}
+
+/* ---------- لوحة القسم ---------- */
 function viewDept(M, i){
   const d = M.dept[i]; if (!d) return '<p class="empty">لا توجد أقسام في الملف. أضفها في ورقة «الأقسام».</p>';
-  const c = M.col, s = M.set;
-  const pills = M.dept.map((x, j) => `<a class="pill" href="#dept-${j}" ${j === i ? 'aria-current="page"' : ''}>${esc(x.name)}</a>`).join('');
+  const ci = M.colleges.findIndex(c => c.name === d.college), c = M.colleges[ci], s = M.set;
+  const pills = c.deptIdx.map(j => `<a class="pill" href="#dept-${j}" ${j === i ? 'aria-current="page"' : ''}>${esc(M.dept[j].name)}</a>`).join('');
   const A = d.members.filter(f => f.active && f.load != null);
   const buckets = [['أقل من 10 ساعات', f => f.load < 10, '#B9D7C9'], ['10 إلى النصاب', f => f.load >= 10 && f.load <= s.load, '#5FA88B'], ['فوق النصاب بـ 1–3', f => f.load > s.load && f.load <= s.load + 3, '#D9963A'], ['فوق النصاب بأكثر من 3', f => f.load > s.load + 3, '#B45309']]
     .map(b => ({ l:b[0], n:A.filter(b[1]).length, color:b[2] }));
   const council = {}; d.requests.filter(q => q.open && q.stage === 'مجلس القسم').forEach(q => { const k = council[q.type] || (council[q.type] = {n:0, max:0, sys:q.sys}); k.n++; k.max = Math.max(k.max, q.wait || 0); });
   const clist = Object.entries(council).sort((a, b) => b[1].max - a[1].max);
   const comps = d.complaints.filter(x => x.open).sort((a, b) => (b.days || 0) - (a.days || 0)).slice(0, 6);
+  const lv = d.stuList.slice();
   const rows = d.members.map(f => `<tr>
     <td><a class="lnk" href="#member-${M.members.indexOf(f)}">${esc(f.name)}</a></td><td>${esc(f.rank)}</td><td>${esc(f.status)}</td>
-    <td class="num ${f.over > 0 ? 'w' : ''}">${f.load == null ? '—' : f.load}</td><td class="num">${f.pubsY}</td><td class="num">${f1(f.units)}</td>
-    <td class="num">${f.yrs == null ? '—' : f1(f.yrs)}</td><td class="num">${f.openReqs}</td>
-    <td class="w" style="white-space:normal;min-width:180px">${f.flags.map(esc).join('، ')}</td></tr>`).join('');
+    <td class="num ${f.over > 0 ? 'w' : ''}">${f.load == null ? '—' : f.load}</td><td class="num">${f.secs.length}</td><td class="num">${f.pubsY}</td>
+    <td class="num">${f.yrs == null ? '—' : f1(f.yrs)}</td><td class="${f.profileOk ? 'g' : 'w'}">${f.profileOk ? 'مكتمل' : 'ينقص: ' + esc(f.missing.join('، '))}</td>
+    <td class="num">${f.openReqs}</td><td class="w" style="white-space:normal;min-width:170px">${f.flags.map(esc).join('، ')}</td></tr>`).join('');
   return `
-  <div class="head"><div><p class="crumbs"><a href="#college">لوحة الكلية</a><span aria-hidden="true">‹</span><span>لوحة القسم</span></p><h1>قسم ${esc(d.name)}</h1></div><nav class="pills" aria-label="اختيار القسم">${pills}</nav></div>
+  <div class="head"><div><p class="crumbs"><a href="#uni">لوحة الجامعة</a><span aria-hidden="true">‹</span><a href="#college-${ci}">${esc(d.college)}</a><span aria-hidden="true">‹</span><span>لوحة القسم</span></p><h1>قسم ${esc(d.name)}</h1></div><nav class="pills" aria-label="اختيار القسم">${pills}</nav></div>
   <section class="kpis" aria-label="مؤشرات القسم">
-    ${kpi('أعضاء على رأس العمل', d.fac, `من ${d.all} عضواً`, '', 'الأعضاء')}
-    ${kpi('طالب لكل عضو', f1(d.ratio), `الكلية: ${f1(c.ratio)}`, vsCol(d.ratio, c.ratio, false) === 'w' ? 'warn' : 'good', 'الأقسام')}
+    ${kpi('أعضاء على رأس العمل', d.fac, `من ${d.all} · اكتمال الملفات ${pc(d.profilePct)}`, '', 'الأعضاء')}
+    ${kpi('طالب لكل عضو', f1(d.ratio), `${fmt(d.students)} طالباً · الكلية ${f1(c.ratio)}`, vsCol(d.ratio, c.ratio, false) === 'w' ? 'warn' : 'good', 'الطلاب')}
     ${kpi('متوسط العبء', f1(d.avgLoad), `الفرق بين الأعلى والأقل: ${d.maxLoad == null ? '—' : d.maxLoad - d.minLoad} ساعة`, '', 'الأعضاء ← أكاديميا')}
     ${kpi('أبحاث ' + s.year, d.pubs, `${f2(d.perFac)} لكل عضو · الكلية ${f2(c.perFac)}`, vsCol(d.perFac, c.perFac, true) === 'w' ? 'warn' : 'good', 'الأبحاث')}
-    ${kpi('طلبات معلّقة', d.openReq, `${d.overdueReq} متأخرة`, d.overdueReq ? 'warn' : '', 'الطلبات')}
+    ${kpi('الشعب', d.sections, `امتلاء ${pc(d.secFill)} · ${d.secIssues} بها مشكلة`, d.secIssues ? 'warn' : '', 'الجداول')}
     ${kpi('شكاوى مفتوحة', d.openCmp, `${d.overdueCmp} متأخرة`, d.overdueCmp ? 'crit' : '', 'الشكاوى')}
   </section>
   <div class="row">
-    <section class="card grow" aria-labelledby="h-ld"><div class="card-h"><h2 id="h-ld">توزيع العبء التدريسي</h2><span class="src">الأعضاء ← أكاديميا</span></div>
-      ${buckets.map(b => `<div class="hbar"><span>${b.l}</span><div class="stack"><i style="width:${pct(b.n, A.length)}%;background:${b.color}"></i></div><span class="num">${b.n} عضواً</span></div>`).join('')}
-      <p class="foot">${d.overUnclaimed ? `<span class="w">${d.overUnclaimed} أعضاء</span> فوق النصاب ولم يطالبوا بالمكافأة.` : 'كل من تجاوز النصاب قدّم طلب المكافأة.'}</p>
-    </section>
-    <section class="card side" aria-labelledby="h-cn"><h2 id="h-cn">بانتظار مجلس القسم</h2>
-      ${clist.length ? clist.map(([t, v]) => `<div class="list-row"><span>${esc(t)}<br><span class="src">${esc(v.sys)}</span></span><span class="num" style="text-align:left"><b>${v.n}</b><br><small class="${v.max > s.reqSla ? 'c' : ''}">أقدمها ${v.max} يوماً</small></span></div>`).join('') : '<p class="empty">لا توجد طلبات بانتظار المجلس.</p>'}
-    </section>
+    ${card('h-ld', 'توزيع العبء التدريسي', 'الأعضاء ← أكاديميا', buckets.map(b => `<div class="hbar"><span>${b.l}</span><div class="stack"><i style="width:${pct(b.n, A.length)}%;background:${b.color}"></i></div><span class="num">${b.n} عضواً</span></div>`).join('') +
+      `<p class="foot">${d.overUnclaimed ? `<span class="w">${d.overUnclaimed} أعضاء</span> فوق النصاب ولم يطالبوا بالمكافأة.` : 'كل من تجاوز النصاب قدّم طلب المكافأة.'}</p>`, 'grow')}
+    ${card('h-cn', 'بانتظار مجلس القسم', 'الطلبات', (clist.length ? clist.map(([t, v]) => `<div class="list-row"><span>${esc(t)}<br><span class="src">${esc(v.sys)}</span></span><span class="num" style="text-align:left"><b>${v.n}</b><br><small class="${v.max > s.reqSla ? 'c' : ''}">أقدمها ${v.max} يوماً</small></span></div>`).join('') : '<p class="empty">لا توجد طلبات بانتظار المجلس.</p>') +
+      `<p class="foot">جلسات المجلس آخر 120 يوماً: <b>${d.meetings}</b> · بنود لم تُعتمد: <b class="${d.pendingItems ? 'w' : ''}">${d.pendingItems}</b> · محاضر غير معتمدة: <b class="${d.minutesPending ? 'c' : ''}">${d.minutesPending}</b></p>`, 'side')}
   </div>
+  ${card('h-sch', 'الشعب التي تحتاج معالجة', 'الجداول ← أكاديميا', `<p class="foot" style="margin:0">${d.secIssues} من ${d.sections} شعبة · فوق السعة ${d.secOver} · دون الحد الأدنى (${s.minSec} طلاب) ${d.secLow} · بلا محاضر ${d.secNoInst} · تعارضات ${d.secClash}</p>` + issueSections(d.secList, 12))}
   <div class="row">
-    <section class="card side" aria-labelledby="h-stu"><div class="card-h"><h2 id="h-stu">الطلاب</h2><span class="src">الأقسام ← أكاديميا</span></div>
-      <div class="list-row"><span>الطلاب المنتظمون</span><b class="num">${fmt(d.students)}</b></div>
-      <div class="list-row"><span>الشعب المطروحة</span><b class="num">${fmt(d.sections)}</b></div>
-      <div class="list-row"><span>طلاب في خطر أكاديمي</span><b class="num w">${fmt(d.atRisk)}</b></div>
-    </section>
-    <section class="card grow" aria-labelledby="h-dc"><div class="card-h"><h2 id="h-dc">الشكاوى المفتوحة</h2><span class="src">الشكاوى</span></div>
-      ${comps.length ? comps.map(x => `<div class="list-row"><span><b>${esc(x.type)}</b> · ${esc(x.no)}<br><small class="foot">${esc(x.channel)}</small></span><span class="${x.overdue ? 'c' : ''}">${x.days == null ? '' : 'منذ ' + x.days + ' يوم'}</span></div>`).join('') : '<p class="empty">لا توجد شكاوى مفتوحة لهذا القسم.</p>'}
-    </section>
+    ${card('h-stu', 'الطلاب حسب المرحلة والمستوى', 'الطلاب ← أكاديميا', lv.length ? table(['المرحلة', 'المستوى', 'الطلاب', 'في خطر', 'متوقع تخرجهم'], lv.map(x => `<tr><td>${esc(x.stage)}</td><td>${esc(x.level)}</td><td class="num">${fmt(x.count)}</td><td class="num ${x.atRisk ? 'w' : ''}">${fmt(x.atRisk)}</td><td class="num">${fmt(x.grads)}</td></tr>`).join('') + totalRow(['الإجمالي', '', fmt(d.students), fmt(d.atRisk), fmt(d.grads)]), 480) : `<div class="list-row"><span>الطلاب المنتظمون</span><b class="num">${fmt(d.students)}</b></div><p class="foot">أضف ورقة «الطلاب» لعرض التوزيع حسب المرحلة والمستوى.</p>`, 'side')}
+    ${card('h-dc', 'الشكاوى المفتوحة', 'الشكاوى', comps.length ? comps.map(x => `<div class="list-row"><span><b>${esc(x.type)}</b> · ${esc(x.no)}<br><small class="foot">${esc(x.channel)}</small></span><span class="${x.overdue ? 'c' : ''}">${x.days == null ? '' : 'منذ ' + x.days + ' يوم'}</span></div>`).join('') : '<p class="empty">لا توجد شكاوى مفتوحة لهذا القسم.</p>', 'grow')}
   </div>
-  <section class="card" aria-labelledby="h-mm"><div class="card-h"><h2 id="h-mm">أعضاء القسم</h2><span class="foot">اختر عضواً لفتح صفحته</span></div>
-    <div class="tbl-wrap"><table><thead><tr><th>العضو</th><th>الرتبة</th><th>الحالة</th><th>العبء</th><th>أبحاث ${s.year}</th><th>الوحدات البحثية</th><th>سنوات على الرتبة</th><th>طلبات مفتوحة</th><th>تنبيهات</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="9" class="empty">لا يوجد أعضاء لهذا القسم.</td></tr>'}</tbody></table></div>
-  </section>`;
+  ${card('h-mm', 'أعضاء القسم وملفاتهم', '', `<p class="foot" style="margin:0">اختر عضواً لفتح صفحته</p>` + table(['العضو', 'الرتبة', 'الحالة', 'العبء', 'الشعب', 'أبحاث ' + s.year, 'سنوات على الرتبة', 'اكتمال الملف', 'طلبات مفتوحة', 'تنبيهات'], rows || '<tr><td colspan="10" class="empty">لا يوجد أعضاء لهذا القسم.</td></tr>', 1080))}
+  ${card('h-dmt', 'جلسات مجلس القسم', 'المجالس', meetingsList(d.couList, 6))}`;
 }
 
+/* ---------- صفحة العضو ---------- */
 function viewMember(M, i){
   const f = M.members[i]; if (!f) return '<p class="empty">لا يوجد أعضاء في الملف.</p>';
-  const s = M.set, di = M.dept.findIndex(d => d.name === f.dept);
+  const s = M.set, di = M.dept.findIndex(d => d.name === f.dept), ci = M.colleges.findIndex(c => c.name === f.college);
   const tasks = [];
   if (f.overUnclaimed) tasks.push({k:'act', title:'طالب بمكافأة الوحدات التدريسية الزائدة', detail:`عبؤك ${f.load} ساعة والنصاب ${s.load}: ${f.over} وحدات زائدة لم تُطلب.`, status:'مستحق لم يُطلب', date:'الفصل الحالي', sys:'الخدمة الذاتية'});
   if (f.promoReady) tasks.push({k:'act', title:'راجع أهليتك للترقية', detail:`أمضيت ${f1(f.yrs)} سنة على رتبة ${f.rank}، ووحداتك البحثية المحتسبة ${f1(f.units)}.`, status:'مقترح', date:'', sys:'الترقيات'});
+  f.secs.filter(x => x.instClash).forEach(x => tasks.push({k:'act', title:`تعارض في جدولك: ${x.code} الشعبة ${x.sec}`, detail:`${x.day} ${x.time} · القاعة ${x.room}`, status:'يحتاج تعديل الجدول', date:'', sys:'أكاديميا'}));
   const reqs = f.reqs.map(q => ({ k:q.k, title:`${q.type || 'طلب'} · ${q.no}`, detail:q.stage ? 'المرحلة: ' + q.stage : '', status:q.status + (q.overdue ? ' · متأخر' : ''), date:fdate(q.date), sys:q.sys }));
   const all = tasks.concat(reqs);
   const cnt = k => all.filter(x => x.k === k).length;
@@ -434,11 +602,11 @@ function viewMember(M, i){
   const filt = [['all','الكل', all.length], ['act','تحتاج إجراءك', cnt('act')], ['wait','قيد الاعتماد', cnt('wait')], ['done','مكتملة', cnt('done')]]
     .map(x => `<button class="pill" type="button" data-f="${x[0]}" aria-pressed="${F === x[0]}">${x[1]} (${x[2]})</button>`).join('');
   return `
-  <div class="head"><div><p class="crumbs"><a href="#college">لوحة الكلية</a><span aria-hidden="true">‹</span>${di >= 0 ? `<a href="#dept-${di}">قسم ${esc(f.dept)}</a><span aria-hidden="true">‹</span>` : ''}<span>صفحة العضو</span></p><h1>صفحة العضو</h1></div>
+  <div class="head"><div><p class="crumbs"><a href="#uni">لوحة الجامعة</a><span aria-hidden="true">‹</span>${ci >= 0 ? `<a href="#college-${ci}">${esc(f.college)}</a><span aria-hidden="true">‹</span>` : ''}${di >= 0 ? `<a href="#dept-${di}">قسم ${esc(f.dept)}</a><span aria-hidden="true">‹</span>` : ''}<span>صفحة العضو</span></p><h1>صفحة العضو</h1></div>
     <div><label for="memberSel" class="foot" style="display:block">اختر عضواً</label><select id="memberSel" class="sel">${sel}</select></div></div>
   <section class="card member-card" aria-label="بيانات العضو">
     <div style="display:flex;gap:16px;align-items:center"><div class="avatar" aria-hidden="true">${esc(f.name.replace(/^(د|أ)\.\s*/, '').charAt(0))}</div>
-      <div><h2 style="font-size:24px">${esc(f.name)}</h2><p style="margin:2px 0 6px;color:var(--muted)">${esc(f.rank)} · قسم ${esc(f.dept)} · ${esc(f.status)}</p><span class="src">الرقم الوظيفي ${esc(f.id)}</span></div></div>
+      <div><h2 style="font-size:24px">${esc(f.name)}</h2><p style="margin:2px 0 6px;color:var(--muted)">${esc(f.rank)} · قسم ${esc(f.dept)} · ${esc(f.college)} · ${esc(f.status)}</p><span class="src">الرقم الوظيفي ${esc(f.id)}</span> ${f.profileOk ? '<span class="src">الملف مكتمل</span>' : `<span class="src" style="color:var(--warn)">ينقص الملف: ${esc(f.missing.join('، '))}</span>`}</div></div>
     <div class="mini"><div style="background:var(--crit-soft)"><small>تحتاج إجراءك</small><b class="num c">${cnt('act')}</b></div><div style="background:var(--warn-soft)"><small>قيد الاعتماد</small><b class="num w">${cnt('wait')}</b></div><div style="background:var(--accent-soft)"><small>أبحاث ${s.year}</small><b class="num g">${f.pubsY}</b></div></div>
   </section>
   <section class="card" id="aiCard" aria-labelledby="h-ai">
@@ -468,15 +636,12 @@ function viewMember(M, i){
       </section>
     </div>
   </div>
-  <section class="card" aria-labelledby="h-pb"><div class="card-h"><h2 id="h-pb">الإنتاج العلمي</h2><span class="src">الأبحاث</span></div>
-    <div class="tbl-wrap"><table><thead><tr><th>عنوان البحث</th><th>الوعاء</th><th>السنة</th><th>الربعية</th><th>الوحدات</th><th>المكافأة</th></tr></thead>
-    <tbody>${f.res.length ? f.res.slice().sort((a, b) => (b.year || 0) - (a.year || 0)).map(r => `<tr><td class="wrap" dir="auto">${r.doi ? `<a href="https://doi.org/${encodeURI(r.doi)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}</td><td class="wrap" style="min-width:160px">${esc(r.venue)}</td><td class="num">${r.year || '—'}</td><td>${esc(r.q)}</td><td class="num">${f1(r.units)}</td><td class="${/مرفوض/.test(r.reward) ? 'c' : ''}">${esc(r.reward)}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">لا توجد أبحاث مسجلة لهذا العضو.</td></tr>'}</tbody></table></div>
-  </section>`;
+  ${f.secs.length ? card('h-msec', 'جدولي هذا الفصل', 'الجداول ← أكاديميا', table(['المقرر', 'الشعبة', 'الموعد', 'القاعة', 'المسجلون/السعة', 'ملاحظة'], f.secs.map(x => `<tr><td>${esc(x.code)} · ${esc(x.course)}</td><td class="num">${esc(x.sec)}</td><td>${esc(x.day)} <bdi dir="ltr">${esc(x.time)}</bdi></td><td><bdi dir="ltr">${esc(x.room)}</bdi></td><td class="num">${x.enrolled}/${x.cap == null ? '—' : x.cap}</td><td class="${x.issue ? (/تعارض|بلا/.test(x.issue) ? 'c' : 'w') : ''}">${esc(x.issue)}</td></tr>`).join(''), 640)) : ''}
+  ${card('h-pb', 'الإنتاج العلمي', 'الأبحاث', table(['عنوان البحث', 'الوعاء', 'السنة', 'الربعية', 'الوحدات', 'المكافأة'], f.res.length ? f.res.slice().sort((a, b) => (b.year || 0) - (a.year || 0)).map(r => `<tr><td class="wrap" dir="auto">${r.doi ? `<a href="https://doi.org/${encodeURI(r.doi)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)}</td><td class="wrap" style="min-width:160px">${esc(r.venue)}</td><td class="num">${r.year || '—'}</td><td>${esc(r.q)}</td><td class="num">${f1(r.units)}</td><td class="${/مرفوض/.test(r.reward) ? 'c' : ''}">${esc(r.reward)}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">لا توجد أبحاث مسجلة لهذا العضو.</td></tr>', 760))}`;
 }
 
-
 /* ---------- المساعد ---------- */
-const SUGG = ['ما المطلوب مني الآن؟', 'ما مستحقاتي؟', 'هل أنا مؤهل للترقية؟', 'ما حالة طلباتي؟', 'لماذا رُفض طلبي؟', 'كم بحثاً نشرت هذا العام؟'];
+const SUGG = ['ما المطلوب مني الآن؟', 'ما مستحقاتي؟', 'هل أنا مؤهل للترقية؟', 'ما حالة طلباتي؟', 'لماذا رُفض طلبي؟', 'هل في جدولي مشكلة؟', 'كم بحثاً نشرت هذا العام؟'];
 function memberCtx(f, M){
   const s = M.set;
   return {
@@ -486,7 +651,9 @@ function memberCtx(f, M){
     الأبحاث:f.res.map(r => ({ العنوان:r.title, الوعاء:r.venue, السنة:r.year, الربعية:r.q, الوحدات:r.units, المكافأة:r.reward })),
     الوحدات_البحثية_المحتسبة:f.units,
     الطلبات:f.reqs.map(q => ({ الرقم:q.no, النظام:q.sys, النوع:q.type, تاريخ_التقديم:fdate(q.date), المرحلة:q.stage, الحالة:q.status, أيام_الانتظار:q.wait, متأخر:q.overdue })),
-    التنبيهات:f.flags
+    التنبيهات:f.flags,
+    الشعب_التي_يدرسها:(f.secs || []).map(x => ({ المقرر:x.code + ' ' + x.course, الشعبة:x.sec, اليوم:x.day, الوقت:x.time, القاعة:x.room, المسجلون:x.enrolled, السعة:x.cap, ملاحظة:x.issue })),
+    القسم_والكلية:f.dept + ' · ' + f.college
   };
 }
 const li = a => '<ul>' + a.map(x => '<li>' + x + '</li>').join('') + '</ul>';
@@ -520,6 +687,12 @@ function localAnswer(q, f, M){
     if (f.over > 0) parts.push(`عبؤك ${f.load} ساعة والنصاب ${s.load}: لديك <b>${f.over} وحدات زائدة</b>. ${f.claimed ? '<span class="g">طلب المكافأة مقدَّم.</span>' : '<span class="w">لم تقدّم طلب المكافأة بعد</span>، ويُقدَّم من الخدمة الذاتية.'}`);
     if (unclaimedRes.length) parts.push(`${unclaimedRes.length} ${unclaimedRes.length === 1 ? 'بحث لم يُقدَّم' : 'أبحاث لم تُقدَّم'} لمكافأة النشر: ${unclaimedRes.map(r => '«' + esc(r.title) + '»').join('، ')}. تحقق من الأهلية وفق الضوابط.`);
     return parts.length ? 'هذه مستحقات يمكنك المطالبة بها:' + li(parts) : 'لا أرى مستحقات غير مطالب بها في بياناتك الحالية.';
+  }
+  if (has(/جدول|شعب|شعبه|محاضرات|قاعه|تعارض/)) {
+    const L = f.secs || [];
+    if (!L.length) return 'لا توجد شعب مسندة إليك في جداول هذا الفصل.';
+    const bad = L.filter(x => x.issue);
+    return `تدرّس هذا الفصل ${L.length} ${L.length === 1 ? 'شعبة' : 'شعب'}:` + li(L.map(x => `${esc(x.code)} · الشعبة ${esc(x.sec)} · ${esc(x.day)} <bdi dir="ltr">${esc(x.time)}</bdi> · القاعة <bdi dir="ltr">${esc(x.room)}</bdi> · ${x.enrolled}/${x.cap == null ? '—' : x.cap} طالباً${x.issue ? ' <span class="' + (/تعارض|بلا/.test(x.issue) ? 'c' : 'w') + '">(' + esc(x.issue) + ')</span>' : ''}`)) + (bad.length ? `${bad.length} منها تحتاج معالجة، راجع رئيس القسم أو وحدة الجداول.` : 'لا توجد مشكلات في جدولك.');
   }
   if (has(/عبء|عبا|ساعات|نصاب|تدريس/)) {
     if (f.load == null) return 'عبؤك التدريسي غير مسجل في البيانات الحالية.';
@@ -604,15 +777,22 @@ function bindAI(i){
   renderChat();
 }
 
+
+
 /* ---------- التوجيه ---------- */
 function route(){
   const M = S.model, app = document.getElementById('app');
-  const h = (location.hash || '#college').slice(1);
-  let m = /^dept-(\d+)$/.exec(h), mm = /^member-(\d+)$/.exec(h);
-  const level = m ? 'dept' : mm ? 'member' : 'college';
-  ['college','dept','member'].forEach(l => { const a = document.getElementById('nav-' + l); if (l === level) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
+  const h = (location.hash || '#uni').slice(1);
+  const mc = /^college-(\d+)$/.exec(h), md = /^dept-(\d+)$/.exec(h), mm = /^member-(\d+)$/.exec(h);
+  const level = mc ? 'college' : md ? 'dept' : mm ? 'member' : 'uni';
+  if (mc) S.last.college = +mc[1];
+  if (md) { S.last.dept = +md[1]; if (M && M.dept[+md[1]]) { const ci = M.colleges.findIndex(c => c.name === M.dept[+md[1]].college); if (ci >= 0) S.last.college = ci; } }
+  if (mm) { S.last.member = +mm[1]; const f = M && M.members[+mm[1]]; if (f) { const di = M.dept.findIndex(d => d.name === f.dept); if (di >= 0) S.last.dept = di; const ci = M.colleges.findIndex(c => c.name === f.college); if (ci >= 0) S.last.college = ci; } }
+  if (mc && M && M.colleges[+mc[1]] && M.dept[S.last.dept] && M.dept[S.last.dept].college !== M.colleges[+mc[1]].name) S.last.dept = M.colleges[+mc[1]].deptIdx[0] || 0;
+  const navs = { uni:'#uni', college:'#college-' + S.last.college, dept:'#dept-' + S.last.dept, member:'#member-' + S.last.member };
+  Object.keys(navs).forEach(l => { const a = document.getElementById('nav-' + l); a.setAttribute('href', navs[l]); if (l === level) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   let html = S.error ? `<p class="err" role="alert">${esc(S.error)}</p>` : '';
-  if (M) html += level === 'dept' ? viewDept(M, +m[1]) : level === 'member' ? viewMember(M, +mm[1]) : viewCollege(M);
+  if (M) html += level === 'college' ? viewCollege(M, +mc[1]) : level === 'dept' ? viewDept(M, +md[1]) : level === 'member' ? viewMember(M, +mm[1]) : viewUniversity(M);
   app.innerHTML = html;
   const sel = document.getElementById('memberSel');
   if (sel) sel.addEventListener('change', () => { S.reqF = 'all'; location.hash = 'member-' + sel.value; });
@@ -620,11 +800,11 @@ function route(){
   if (M && level === 'member') bindAI(+mm[1]);
   const st = document.getElementById('srcState');
   st.innerHTML = M ? (S.source === 'file'
-    ? `<span class="tag real">بياناتك</span> الملف: <b>${esc(S.fileName)}</b> · ${M.fac.length} عضواً · ${M.res.length} بحثاً · ${M.req.length} طلباً · ${M.cmp.length} شكوى. تُقرأ داخل متصفحك فقط ولا تُرسل لأي جهة.`
-    : `<span class="tag sample">بيانات توضيحية</span> لعرض طريقة العمل. افتح قالب Excel بعد تعبئته لتظهر بياناتك؛ تُقرأ داخل متصفحك فقط.`) : 'جارٍ التحميل…';
+    ? `<span class="tag real">بياناتك</span> الملف: <b>${esc(S.fileName)}</b> · ${M.colleges.length} كليات · ${M.dept.length} قسماً · ${M.fac.length} عضواً · ${M.sec.length} شعبة. تُقرأ داخل متصفحك فقط ولا تُرسل لأي جهة.`
+    : `<span class="tag sample">بيانات توضيحية</span> ثلاث كليات افتراضية لعرض طريقة العمل. افتح قالب Excel بعد تعبئته لتظهر بياناتك؛ تُقرأ داخل متصفحك فقط.`) : 'جارٍ التحميل…';
 }
 function load(raw, source, name){
-  try { S.model = build(raw); S.source = source; S.fileName = name || ''; S.error = ''; S.reqF = 'all'; }
+  try { S.model = build(raw); S.source = source; S.fileName = name || ''; S.error = ''; S.reqF = 'all'; S.last = { college:0, dept:0, member:0 }; S.chat = { key:'', msgs:[] }; }
   catch (e) { S.error = 'تعذّر حساب المؤشرات: ' + e.message; }
   route();
 }
@@ -633,7 +813,7 @@ function readFile(file){
   if (typeof XLSX === 'undefined') { S.error = 'تعذّر تحميل قارئ ملفات Excel. أعد تحميل الصفحة.'; route(); return; }
   const fr = new FileReader();
   fr.onload = e => {
-    try { const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array', cellDates:true}); load(fromWorkbook(wb), 'file', file.name); location.hash = 'college'; }
+    try { const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array', cellDates:true}); load(fromWorkbook(wb), 'file', file.name); location.hash = 'uni'; }
     catch (err) { S.error = err.message || 'تعذّرت قراءة الملف. تأكد أنه بصيغة xlsx ومبني على القالب.'; route(); }
   };
   fr.onerror = () => { S.error = 'تعذّرت قراءة الملف.'; route(); };
