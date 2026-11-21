@@ -102,6 +102,18 @@ select.sel{border:1px solid #C6D1CB;border-radius:8px;padding:9px 12px;min-heigh
 .err{background:var(--crit-soft);color:var(--crit);border-radius:10px;padding:12px 16px;font-weight:600}
 .drop{outline:3px dashed var(--accent);outline-offset:-10px}
 .foot{font-size:12px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips .pill{font-size:14px;min-height:40px;padding:7px 13px}
+.ai-log{display:flex;flex-direction:column;gap:10px;max-height:460px;overflow-y:auto;padding:4px 2px}
+.msg{max-width:86%;border-radius:14px;padding:11px 15px;font-size:15px;line-height:1.7}
+.msg.user{align-self:flex-start;background:var(--accent-soft);color:var(--ink);border-bottom-right-radius:4px}
+.msg.bot{align-self:flex-end;background:var(--soft);border-bottom-left-radius:4px}
+.msg ul{margin:6px 0 0;padding-right:20px}
+.msg .meta{display:block;font-size:12px;color:var(--muted);margin-top:6px}
+.ai-form{display:flex;gap:10px;flex-wrap:wrap}
+.ai-form input{flex:1 1 280px;border:1px solid #C6D1CB;border-radius:8px;padding:10px 14px;min-height:44px;background:var(--surface);color:var(--ink)}
+.ai-mode{font-size:12px;border-radius:999px;padding:3px 10px;font-weight:600;background:var(--soft);color:var(--muted)}
+.ai-mode.live{background:var(--accent-soft);color:var(--accent-ink)}
 @media (max-width:520px){.hbar{grid-template-columns:100px minmax(0,1fr) 70px}.mini{min-width:0;width:100%}h1{font-size:23px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -148,7 +160,8 @@ const SYS_URL = {
   'الملف الأكاديمي':'https://itcsvc.kku.edu.sa/KKU_AcademicProfile',
   'أعذار الطلاب':'https://itcsvc.kku.edu.sa/KKU_StudentsExcuses'
 };
-const S = { model:null, source:'sample', fileName:'', reqF:'all', error:'' };
+const S = { model:null, source:'sample', fileName:'', reqF:'all', error:'', chat:{ key:'', msgs:[] }, busy:false };
+let SAMPLE = null;
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const str = v => (v == null ? '' : String(v)).trim();
@@ -428,6 +441,13 @@ function viewMember(M, i){
       <div><h2 style="font-size:24px">${esc(f.name)}</h2><p style="margin:2px 0 6px;color:var(--muted)">${esc(f.rank)} · قسم ${esc(f.dept)} · ${esc(f.status)}</p><span class="src">الرقم الوظيفي ${esc(f.id)}</span></div></div>
     <div class="mini"><div style="background:var(--crit-soft)"><small>تحتاج إجراءك</small><b class="num c">${cnt('act')}</b></div><div style="background:var(--warn-soft)"><small>قيد الاعتماد</small><b class="num w">${cnt('wait')}</b></div><div style="background:var(--accent-soft)"><small>أبحاث ${s.year}</small><b class="num g">${f.pubsY}</b></div></div>
   </section>
+  <section class="card" id="aiCard" aria-labelledby="h-ai">
+    <div class="card-h"><h2 id="h-ai">اسأل المساعد عن شؤونك</h2><span class="ai-mode" id="aiMode"></span></div>
+    <div class="chips" role="group" aria-label="أسئلة مقترحة">${SUGG.map(q => `<button class="pill" type="button" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    <div class="ai-log" id="aiLog" aria-live="polite"></div>
+    <form class="ai-form" id="aiForm"><label for="aiInput" class="vh">سؤالك للمساعد</label><input id="aiInput" type="text" autocomplete="off" placeholder="اكتب سؤالك، مثل: ما حالة الطلب 14071؟"><button class="btn" type="submit">اسأل</button></form>
+    <p class="foot" id="aiNote" style="margin:0"></p>
+  </section>
   <div class="row" style="align-items:flex-start">
     <section class="card grow" style="padding:20px 0 6px" aria-labelledby="h-rq">
       <div style="padding:0 22px;display:flex;flex-direction:column;gap:12px"><div class="card-h"><h2 id="h-rq">طلباتي ومهامي</h2><span class="foot">من كل الأنظمة في قائمة واحدة</span></div><div class="pills" role="group" aria-label="تصفية حسب الحالة">${filt}</div></div>
@@ -454,6 +474,136 @@ function viewMember(M, i){
   </section>`;
 }
 
+
+/* ---------- المساعد ---------- */
+const SUGG = ['ما المطلوب مني الآن؟', 'ما مستحقاتي؟', 'هل أنا مؤهل للترقية؟', 'ما حالة طلباتي؟', 'لماذا رُفض طلبي؟', 'كم بحثاً نشرت هذا العام؟'];
+function memberCtx(f, M){
+  const s = M.set;
+  return {
+    العضو:{ الاسم:f.name, الرتبة:f.rank, القسم:f.dept, الحالة:f.status, سنوات_على_الرتبة:f.yrs == null ? 'غير مسجل' : +f.yrs.toFixed(1) },
+    الإعدادات:{ السنة:s.year, النصاب_بالساعات:s.load, مهلة_الطلبات_بالأيام:s.reqSla, أدنى_مدة_للترقية_بالسنوات:s.promo },
+    العبء:{ ساعات_الفصل:f.load, وحدات_زائدة:f.over, طلب_المكافأة_مقدم:f.claimed },
+    الأبحاث:f.res.map(r => ({ العنوان:r.title, الوعاء:r.venue, السنة:r.year, الربعية:r.q, الوحدات:r.units, المكافأة:r.reward })),
+    الوحدات_البحثية_المحتسبة:f.units,
+    الطلبات:f.reqs.map(q => ({ الرقم:q.no, النظام:q.sys, النوع:q.type, تاريخ_التقديم:fdate(q.date), المرحلة:q.stage, الحالة:q.status, أيام_الانتظار:q.wait, متأخر:q.overdue })),
+    التنبيهات:f.flags
+  };
+}
+const li = a => '<ul>' + a.map(x => '<li>' + x + '</li>').join('') + '</ul>';
+function localAnswer(q, f, M){
+  const s = M.set, t = q.replace(/[أإآ]/g, 'ا');
+  const has = re => re.test(t);
+  const num = (q.match(/\d{3,}/) || [])[0];
+  const rej = f.reqs.filter(r => r.status === 'مرفوض');
+  const open = f.reqs.filter(r => r.open);
+  const late = open.filter(r => r.overdue);
+  const unclaimedRes = f.res.filter(r => /لم يُقدَّم|لم يقدم/.test(r.reward));
+  const reqLine = r => `<b>${esc(r.type || 'طلب')}</b> رقم ${esc(r.no)} في «${esc(r.sys)}»: ${esc(r.status)}${r.stage ? ' · المرحلة: ' + esc(r.stage) : ''}${r.wait != null ? ' · ' + r.wait + ' يوماً' : ''}${r.overdue ? ' <span class="c">(متأخر)</span>' : ''}`;
+  if (num) {
+    const r = f.reqs.find(x => x.no === num);
+    if (r) return 'هذه حالة الطلب:' + li([reqLine(r)]) + (r.status === 'مرفوض' ? 'سبب الرفض غير مسجل في البيانات الموحدة بعد. افتح الطلب في نظامه لقراءة ملاحظة المجلس.' : '');
+    return `لم أجد طلباً برقم ${esc(num)} ضمن طلباتك المسجلة.`;
+  }
+  if (has(/رفض|مرفوض/)) {
+    if (!rej.length) return 'لا يوجد لديك طلب مرفوض في البيانات الحالية.';
+    return `لديك ${rej.length} ${rej.length === 1 ? 'طلب مرفوض' : 'طلبات مرفوضة'}:` + li(rej.map(reqLine)) + 'سبب الرفض لا يصل إلى البيانات الموحدة في هذه المرحلة. افتح الطلب في نظامه، واستكمل الملاحظات ثم أعد التقديم.';
+  }
+  if (has(/ترقي|مؤهل|اهلي/)) {
+    if (f.rank === 'أستاذ') return 'أنت على أعلى رتبة أكاديمية، فلا توجد ترقية تالية.';
+    const parts = [];
+    parts.push(f.yrs == null ? 'تاريخ تعيينك على الرتبة غير مسجل، فلا أستطيع حساب المدة. أضفه في ورقة الأعضاء.' : `أمضيت <b>${f1(f.yrs)}</b> سنة على رتبة ${esc(f.rank)}، والحد الأدنى المعتمد في الإعدادات ${s.promo} سنوات${f.yrs >= s.promo ? ' <span class="g">(مستوفى)</span>' : ` <span class="w">(متبقٍ ${f1(s.promo - f.yrs)} سنة)</span>`}.`);
+    parts.push(`وحداتك البحثية المحتسبة: <b>${f1(f.units)}</b> من ${f.res.length} ${f.res.length === 1 ? 'بحث' : 'أبحاث'}.`);
+    return li(parts) + 'عدد الوحدات المطلوب يُقارن بلائحة الترقيات المعتمدة، وهي غير مضمّنة في هذه النسخة.';
+  }
+  if (has(/مستحق|مكافا|زائد|مال|صرف/)) {
+    const parts = [];
+    if (f.over > 0) parts.push(`عبؤك ${f.load} ساعة والنصاب ${s.load}: لديك <b>${f.over} وحدات زائدة</b>. ${f.claimed ? '<span class="g">طلب المكافأة مقدَّم.</span>' : '<span class="w">لم تقدّم طلب المكافأة بعد</span>، ويُقدَّم من الخدمة الذاتية.'}`);
+    if (unclaimedRes.length) parts.push(`${unclaimedRes.length} ${unclaimedRes.length === 1 ? 'بحث لم يُقدَّم' : 'أبحاث لم تُقدَّم'} لمكافأة النشر: ${unclaimedRes.map(r => '«' + esc(r.title) + '»').join('، ')}. تحقق من الأهلية وفق الضوابط.`);
+    return parts.length ? 'هذه مستحقات يمكنك المطالبة بها:' + li(parts) : 'لا أرى مستحقات غير مطالب بها في بياناتك الحالية.';
+  }
+  if (has(/عبء|عبا|ساعات|نصاب|تدريس/)) {
+    if (f.load == null) return 'عبؤك التدريسي غير مسجل في البيانات الحالية.';
+    return `عبؤك هذا الفصل <b>${f.load} ساعة</b>، والنصاب ${s.load}. ` + (f.over > 0 ? `أي ${f.over} وحدات زائدة${f.claimed ? '، وطلب مكافأتها مقدَّم.' : '، ولم يُقدَّم طلب مكافأتها بعد.'}` : 'لا توجد وحدات زائدة.');
+  }
+  if (has(/بحث|ابحاث|نشر|Q1|Q2|مجل/i)) {
+    const y = f.res.filter(r => r.year === s.year);
+    if (!f.res.length) return 'لا توجد أبحاث مسجلة باسمك في البيانات الحالية.';
+    return `نشرت <b>${y.length}</b> ${y.length === 1 ? 'بحثاً' : 'أبحاث'} في ${s.year}، ومجموع أبحاثك المسجلة ${f.res.length}:` + li(f.res.slice().sort((a, b) => (b.year || 0) - (a.year || 0)).slice(0, 6).map(r => `«${esc(r.title)}» · ${r.year || '—'}${r.q ? ' · ' + esc(r.q) : ''}${r.reward ? ' · المكافأة: ' + esc(r.reward) : ''}`));
+  }
+  if (has(/طلب|حال|متابع|اعتماد/)) {
+    if (!f.reqs.length) return 'لا توجد طلبات مسجلة باسمك.';
+    return `لديك ${f.reqs.length} ${f.reqs.length === 1 ? 'طلب' : 'طلبات'}: ${open.length} قيد الاعتماد${late.length ? ` (<span class="c">${late.length} تجاوزت ${s.reqSla} يوماً</span>)` : ''}، و${rej.length} مرفوض، و${f.reqs.length - open.length - rej.length} مكتمل.` + (open.length || rej.length ? li(rej.concat(open).map(reqLine)) : '');
+  }
+  if (has(/مطلوب|افعل|مهام|اليوم|الاسبوع|ملخص|وضعي|ابدا/) || true) {
+    const todo = [];
+    if (f.overUnclaimed) todo.push(`قدّم طلب مكافأة الوحدات الزائدة (${f.over} وحدات) من الخدمة الذاتية.`);
+    rej.forEach(r => todo.push(`راجع ${esc(r.type || 'الطلب')} رقم ${esc(r.no)} المرفوض في «${esc(r.sys)}» وأعد تقديمه.`));
+    late.forEach(r => todo.push(`تابع ${esc(r.type || 'الطلب')} رقم ${esc(r.no)}: معلّق منذ ${r.wait} يوماً في ${esc(r.stage || 'الاعتماد')}.`));
+    if (f.promoReady) todo.push(`راجع أهليتك للترقية: أمضيت ${f1(f.yrs)} سنة على رتبتك.`);
+    if (unclaimedRes.length) todo.push(`تحقق من أهلية ${unclaimedRes.length === 1 ? 'بحث' : unclaimedRes.length + ' أبحاث'} لمكافأة النشر.`);
+    const intro = has(/مطلوب|افعل|مهام|اليوم|الاسبوع|ملخص|وضعي|ابدا/) ? '' : 'لم أفهم السؤال تماماً، فهذا ملخص وضعك. ';
+    return todo.length ? intro + `أهم ما يحتاج إجراءك (${todo.length}):` + li(todo) : intro + 'لا يوجد ما يحتاج إجراءك الآن. كل طلباتك ضمن المهل، ولا مستحقات معلّقة.';
+  }
+}
+function fmtClaude(text){
+  const lines = esc(text).split(/\n/);
+  let html = '', inList = false;
+  lines.forEach(l => {
+    const m = /^\s*(?:[-•*]|\d+[.)])\s+(.*)/.exec(l);
+    if (m) { if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + m[1].replace(/\*\*(.+?)\*\*/g, '<b>$1</b>') + '</li>'; }
+    else { if (inList) { html += '</ul>'; inList = false; } if (l.trim()) html += '<p style="margin:0 0 6px">' + l.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>') + '</p>'; }
+  });
+  return html + (inList ? '</ul>' : '');
+}
+async function askClaude(q, f, M, bubble){
+  const prior = S.chat.msgs.slice(0, -1).slice(-6).map(m => ({ role:m.role, content:m.text }));
+  while (prior.length && prior[0].role !== 'user') prior.shift();
+  const instr = 'أنت مساعد عضو هيئة التدريس في «المنصة الموحدة للكليات». أجب بالعربية الفصحى المبسطة، في جمل قصيرة أو نقاط، من بيانات العضو المرفقة فقط. اذكر الأرقام واسم النظام المصدر عند الحاجة. إن لم تكفِ البيانات للإجابة فقل ذلك صراحة واقترح أين يجدها (مثل فتح الطلب في نظامه). لا تخترع لوائح أو أرقاماً أو أسباب رفض غير موجودة في البيانات. لا تتجاوز 120 كلمة.';
+  const messages = prior.concat([{ role:'user', content: instr + '\n\nبيانات العضو:\n' + JSON.stringify(memberCtx(f, M)) + '\n\nالسؤال: ' + q }]);
+  const res = await SAMPLE(messages, { cache:false, modelTier:'quick', onText: ({text}) => { bubble.innerHTML = fmtClaude(text); } });
+  return res.text || '';
+}
+function renderChat(){
+  const log = document.getElementById('aiLog'); if (!log) return;
+  log.innerHTML = S.chat.msgs.length ? S.chat.msgs.map(m => `<div class="msg ${m.role === 'user' ? 'user' : 'bot'}">${m.html}${m.meta ? `<span class="meta">${esc(m.meta)}</span>` : ''}</div>`).join('')
+    : '<p class="foot" style="margin:0">اختر سؤالاً مقترحاً أو اكتب سؤالك. يجيب المساعد من بيانات العضو المعروض فقط.</p>';
+  log.scrollTop = log.scrollHeight;
+  const mode = document.getElementById('aiMode'), note = document.getElementById('aiNote');
+  if (mode) { mode.textContent = SAMPLE ? 'مدعوم بالذكاء الاصطناعي (Claude)' : 'يعمل داخل متصفحك'; mode.className = 'ai-mode' + (SAMPLE ? ' live' : ''); }
+  if (note) note.textContent = SAMPLE
+    ? 'في هذه النسخة التجريبية تُرسل بيانات العضو المعروض إلى Claude لصياغة الإجابة. استخدمها ببيانات توضيحية أو ببياناتك أنت فقط.'
+    : 'نسخة تجريبية تجيب بقواعد محددة، ولا تُرسل بياناتك لأي جهة. النسخة الرسمية تستخدم نموذج لغة مستضافاً داخل المملكة.';
+}
+async function sendQ(q, i){
+  const M = S.model, f = M && M.members[i]; q = (q || '').trim();
+  if (!f || !q || S.busy) return;
+  S.chat.msgs.push({ role:'user', html:esc(q), text:q });
+  const bot = { role:'assistant', html:'<span class="foot">جارٍ التفكير…</span>', text:'' };
+  S.chat.msgs.push(bot); renderChat();
+  if (SAMPLE) {
+    S.busy = true;
+    const bubbles = document.querySelectorAll('#aiLog .msg.bot'); const bubble = bubbles[bubbles.length - 1];
+    try { const text = await askClaude(q, f, M, bubble); bot.text = text; bot.html = fmtClaude(text); bot.meta = 'Claude · من بياناتك الموحدة'; }
+    catch (e) {
+      if (e && e.code === 'not_granted') SAMPLE = null;
+      bot.html = localAnswer(q, f, M); bot.text = bot.html.replace(/<[^>]+>/g, ' ');
+      bot.meta = e && e.code === 'rate_limited' ? 'تجاوزت حد الطلبات مؤقتاً؛ أجبت بالقواعد المحلية' : 'أجبت بالقواعد المحلية';
+    }
+    S.busy = false;
+  } else {
+    bot.html = localAnswer(q, f, M); bot.text = bot.html.replace(/<[^>]+>/g, ' '); bot.meta = 'من بياناتك الموحدة';
+  }
+  renderChat();
+}
+function bindAI(i){
+  const key = (S.model ? S.fileName + '|' : '') + i;
+  if (S.chat.key !== key) S.chat = { key, msgs:[] };
+  document.querySelectorAll('#aiCard button[data-q]').forEach(b => b.addEventListener('click', () => sendQ(b.dataset.q, i)));
+  const form = document.getElementById('aiForm'), inp = document.getElementById('aiInput');
+  if (form) form.addEventListener('submit', e => { e.preventDefault(); const v = inp.value; inp.value = ''; sendQ(v, i); });
+  renderChat();
+}
+
 /* ---------- التوجيه ---------- */
 function route(){
   const M = S.model, app = document.getElementById('app');
@@ -467,6 +617,7 @@ function route(){
   const sel = document.getElementById('memberSel');
   if (sel) sel.addEventListener('change', () => { S.reqF = 'all'; location.hash = 'member-' + sel.value; });
   app.querySelectorAll('button[data-f]').forEach(b => b.addEventListener('click', () => { S.reqF = b.dataset.f; route(); }));
+  if (M && level === 'member') bindAI(+mm[1]);
   const st = document.getElementById('srcState');
   st.innerHTML = M ? (S.source === 'file'
     ? `<span class="tag real">بياناتك</span> الملف: <b>${esc(S.fileName)}</b> · ${M.fac.length} عضواً · ${M.res.length} بحثاً · ${M.req.length} طلباً · ${M.cmp.length} شكوى. تُقرأ داخل متصفحك فقط ولا تُرسل لأي جهة.`
@@ -495,6 +646,7 @@ document.getElementById('sampleBtn').addEventListener('click', () => { load(samp
 document.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) readFile(f); });
 window.addEventListener('hashchange', () => { route(); window.scrollTo(0, 0); });
 load(sampleRaw(), 'sample');
+if (window.claude && typeof window.claude.use === 'function') { window.claude.use('sample').then(s => { if (s) { SAMPLE = s; renderChat(); } }).catch(() => {}); }
 })();
 </script>
 </body>
