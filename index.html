@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>المنصة الموحدة للكليات</title>
+<meta name="description" content="نموذج تجريبي يجمع بيانات أنظمة الجامعة في لوحات للجامعة والكليات والأقسام وصفحة لكل عضو. الملفات تُقرأ داخل المتصفح فقط.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0F6B4F">
+<meta property="og:title" content="المنصة الموحدة للكليات — نموذج تجريبي">
+<meta property="og:description" content="لوحات للجامعة والكليات والأقسام وصفحة موحدة لكل عضو هيئة تدريس.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F6B4F'/%3E%3Cpath d='M8 8h7v9H8zM17 8h7v5h-7zM17 15h7v9h-7zM8 19h7v5H8z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -52,7 +59,7 @@ h1{font-size:28px;font-weight:700}
 h2{font-size:18px;font-weight:700}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px;display:flex;flex-direction:column;gap:12px;min-width:0}
 .card-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.src{display:inline-block;font-size:11px;color:var(--muted);background:var(--soft);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.src{display:inline-block;font-size:12px;color:var(--muted);background:var(--soft);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:6px;border-top:4px solid var(--line)}
 .kpi.warn{border-top-color:#D9963A}.kpi.crit{border-top-color:var(--crit)}.kpi.good{border-top-color:var(--accent)}
@@ -115,6 +122,57 @@ select.sel{border:1px solid #C6D1CB;border-radius:8px;padding:9px 12px;min-heigh
 .ai-mode{font-size:12px;border-radius:999px;padding:3px 10px;font-weight:600;background:var(--soft);color:var(--muted)}
 .ai-mode.live{background:var(--accent-soft);color:var(--accent-ink)}
 tr.tot td{background:var(--accent-soft);font-weight:700}
+.summary{background:var(--accent-soft);border:1px solid #A9CDBA;border-radius:12px;padding:18px 22px;display:flex;flex-direction:column;gap:8px}
+.summary .lbl{font-size:13px;font-weight:700;color:var(--accent-ink)}
+.summary p{margin:0;font-size:18px;line-height:1.75}
+.summary p.act{font-size:15px;color:#2F4A3E}
+.kpis.primary{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.kpis.primary .v{font-size:34px}
+.kpis.compact{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpis.compact .kpi{padding:12px 14px;border-top-width:3px}
+.kpis.compact .kpi .v{font-size:22px}
+.search{position:relative;flex:1 1 240px;max-width:420px}
+.search input{width:100%;box-sizing:border-box;border:0;border-radius:10px;background:var(--accent-ink);color:#fff;padding:10px 40px 10px 14px;min-height:44px}
+.search input::placeholder{color:#B9D7C9}
+.search svg{position:absolute;right:12px;top:50%;transform:translateY(-50%)}
+.results{position:absolute;top:calc(100% + 6px);right:0;left:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:40;padding:6px;display:none}
+.results.open{display:block}
+.results a{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:var(--ink);text-decoration:none;min-height:44px}
+.results a:hover,.results a:focus{background:var(--soft)}
+.results small{color:var(--muted);font-size:12px}
+.m-cards{display:none;flex-direction:column;gap:10px}
+.m-card{border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.m-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;font-size:13px;color:var(--muted)}
+.m-grid b{color:var(--ink)}
+@media (max-width:640px){
+  header.top{padding:0 12px}
+  .top-in{min-height:56px;gap:8px;padding:8px 0}
+  .brand b{font-size:16px}.brand span{display:none}.logo img{height:36px}
+  .search{order:3;flex-basis:100%;max-width:none}
+  nav.levels{position:fixed;bottom:0;right:0;left:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);gap:2px;padding:4px}
+  nav.levels a{color:var(--muted);justify-content:center;text-align:center;font-size:12px;padding:8px 2px;min-height:48px}
+  nav.levels a:hover{background:var(--soft);color:var(--ink)}
+  nav.levels a[aria-current="page"]{background:var(--accent-soft);color:var(--accent-ink)}
+  body{padding-bottom:68px}
+  .bar{padding:8px 12px}.src-state{font-size:12px;flex-basis:100%}
+  #printBtn,.bar-in a[download]{display:none}
+  .top-in{padding:6px 0}
+  .bar-in .btn,.bar-in .btn2{flex:1 1 auto;justify-content:center;font-size:13px;padding:8px 10px}
+  main{padding:16px 12px 32px;gap:16px}
+  .kpis,.kpis.k4,.kpis.compact,.kpis.primary{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .kpi{padding:12px}.kpi .v,.kpis.primary .v{font-size:24px}
+  .card{padding:16px}
+  .summary{padding:14px 16px}.summary p{font-size:15px}.summary p.act{font-size:14px}
+  section[aria-labelledby="h-ucol"] .tbl-wrap,section[aria-labelledby="h-cmp"] .tbl-wrap{display:none}
+  .m-cards{display:flex}
+}
+@media print{
+  header.top,.bar,#aiCard,.pills,.btn,.btn2,#searchBox,.m-cards{display:none!important}
+  body{background:#fff;padding:0}main{max-width:none;padding:0;gap:14px}
+  .card,.kpi,.summary{break-inside:avoid;border-color:#bbb}
+  .tbl-wrap{overflow:visible}table{min-width:0!important}
+  a{color:inherit;text-decoration:none}
+}
 .half{flex:1 1 520px}
 .kpis.k4{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
 .st{display:inline-block;border-radius:999px;padding:3px 10px;font-size:13px;white-space:nowrap}
@@ -129,6 +187,7 @@ tr.tot td{background:var(--accent-soft);font-weight:700}
     <div class="brand">
             <div><b>المنصة الموحدة للكليات</b><span>نموذج تجريبي غير رسمي · لأغراض العرض</span></div>
     </div>
+    <div class="search" id="searchBox"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#CFE3D8" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><label for="q" class="vh">بحث</label><input id="q" type="search" autocomplete="off" placeholder="ابحث عن عضو أو قسم أو مقرر"><div class="results" id="results" aria-live="polite"></div></div>
     <nav class="levels" aria-label="مستوى العرض">
       <a id="nav-uni" href="#uni">لوحة الجامعة</a>
       <a id="nav-college" href="#college-0">لوحة الكلية</a>
@@ -148,11 +207,11 @@ tr.tot td{background:var(--accent-soft);font-weight:700}
     <input class="vh" type="file" id="file" accept=".xlsx,.xls">
     <button class="btn2" id="sampleBtn" type="button">عرض البيانات التوضيحية</button>
     <a class="btn2" href="template/platform-data-template.xlsx" download>تنزيل القالب الفارغ</a>
+    <button class="btn2" id="printBtn" type="button">طباعة / PDF</button>
   </div>
 </div>
 <main id="app"></main>
 
-<script src="vendor/xlsx.full.min.js"></script>
 <script>
 (function(){
 'use strict';
@@ -168,7 +227,7 @@ const SYS_URL = {
   'أعذار الطلاب':'https://itcsvc.kku.edu.sa/KKU_StudentsExcuses'
 };
 const STAGES = ['دبلوم', 'بكالوريوس', 'ماجستير', 'دكتوراه'];
-const S = { model:null, source:'sample', fileName:'', reqF:'all', error:'', chat:{ key:'', msgs:[] }, busy:false, last:{ college:0, dept:0, member:0 } };
+const S = { model:null, source:'sample', fileName:'', dataDate:null, reqF:'all', error:'', chat:{ key:'', msgs:[] }, busy:false, last:{ college:0, dept:0, member:0 } };
 let SAMPLE = null;
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -420,6 +479,7 @@ const vsCol = (v, c, higherBetter) => v == null || c == null ? '' : ((higherBett
 const lateTag = (n, word) => n ? ` <span class="c">(${n} ${word})</span>` : '';
 const card = (id, title, src, inner, cls) => `<section class="card ${cls || ''}" aria-labelledby="${id}"><div class="card-h"><h2 id="${id}">${title}</h2>${src ? `<span class="src">${esc(src)}</span>` : ''}</div>${inner}</section>`;
 const table = (head, rows, minW) => `<div class="tbl-wrap"><table style="min-width:${minW || 720}px"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+const mCards = items => `<div class="m-cards">${items.map(it => `<div class="m-card"><b>${it.link}</b><div class="m-grid">${it.rows.map(r => `<span>${r[0]} <b class="num">${r[1]}</b></span>`).join('')}</div></div>`).join('')}</div>`;
 const totalRow = cells => `<tr class="tot">${cells.map(c => `<td class="num">${c}</td>`).join('')}</tr>`;
 
 function stagesTable(units, nameCell){
@@ -479,8 +539,9 @@ function viewUniversity(M){
   const watch = M.dept.map((d, i) => Object.assign({ i }, d)).filter(d => d.score > 0).sort((a, b) => b.score - a.score).slice(0, 6);
   const quietCols = cols.filter(c => c.sinceMeeting == null || c.sinceMeeting > 60).length;
   return `
-  <div class="head"><div><p class="crumbs">آخر تحميل للبيانات: ${esc(TODAY.toLocaleDateString('ar-SA-u-ca-islamic-umalqura'))}</p><h1>لوحة الجامعة</h1></div><span class="foot">${M.colleges.length} كليات · ${M.dept.length} قسماً · مؤشرات سنة ${s.year}</span></div>
-  <section class="kpis k4" aria-label="مؤشرات الجامعة">
+  <div class="head"><div><p class="crumbs">${S.source === 'file' ? 'تاريخ الملف' : 'بيانات توضيحية بتاريخ'}: ${dateTxt(S.dataDate)}</p><h1>لوحة الجامعة</h1></div><span class="foot">${M.colleges.length} كليات · ${M.dept.length} قسماً · مؤشرات سنة ${s.year}</span></div>
+  ${headline(M, u, ['الجامعة'], 'الجامعة', cols.map(c => ({ label:c.name, link:link(c.i, c.name), s:c })))}
+  <section class="kpis compact" aria-label="مؤشرات الجامعة">
     ${kpi('أعضاء على رأس العمل', fmt(u.fac), `اكتمال ملفاتهم: ${pc(u.profilePct)}`, '', 'الأعضاء')}
     ${kpi('الطلاب', fmt(u.students), `بكالوريوس ${fmt(u.stages['بكالوريوس'] || 0)} · دراسات عليا ${fmt((u.stages['ماجستير'] || 0) + (u.stages['دكتوراه'] || 0))}`, '', 'الطلاب')}
     ${kpi('أبحاث ' + s.year, fmt(u.pubs), `${f2(u.perFac)} لكل عضو · Q1/Q2: ${u.q1 + u.q2}`, 'good', 'الأبحاث')}
@@ -491,7 +552,7 @@ function viewUniversity(M){
     ${kpi('طلاب في خطر أكاديمي', fmt(u.atRisk), `متوقع تخرجهم هذا الفصل: ${fmt(u.grads)}`, u.atRisk ? 'warn' : '', 'الطلاب')}
   </section>
   ${card('h-ucol', 'مقارنة الكليات', 'كل الأوراق', `<p class="foot" style="margin:0">اختر كلية لفتح لوحتها · الأخضر أفضل من متوسط الجامعة والبرتقالي أسوأ</p>` + table(['الكلية', 'أقسام', 'أعضاء', 'طلاب', 'طالب/عضو', 'بحث/عضو', 'اكتمال الملفات', 'طلبات معلّقة', 'شكاوى مفتوحة', 'شعب بها مشكلة', 'بنود مجالس معلّقة'], rows +
-    totalRow(['إجمالي الجامعة', M.dept.length, u.fac, fmt(u.students), f1(u.ratio), f2(u.perFac), pc(u.profilePct), u.openReq, u.openCmp, u.secIssues, u.pendingItems]), 1100))}
+    totalRow(['إجمالي الجامعة', M.dept.length, u.fac, fmt(u.students), f1(u.ratio), f2(u.perFac), pc(u.profilePct), u.openReq, u.openCmp, u.secIssues, u.pendingItems]), 1100) + mCards(cols.map(c => ({ link:link(c.i, c.name), rows:[['طالب لكل عضو', f1(c.ratio)], ['بحث لكل عضو', f2(c.perFac)], ['طلبات متأخرة', c.overdueReq], ['شعب بمشكلة', c.secIssues], ['شكاوى مفتوحة', c.openCmp], ['اكتمال الملفات', pc(c.profilePct)]] }))))}
   <div class="row">
     ${card('h-ual', 'تتطلب انتباه الجامعة', 'محسوبة آلياً',
       alertBox(u.secClash, 'شعب بها تعارض في القاعة أو المحاضر', 'من جداول كل الكليات؛ تفاصيلها في لوحة كل قسم.', 'crit') +
@@ -526,7 +587,8 @@ function viewCollege(M, ci){
     <td class="num">${d.openReq}${lateTag(d.overdueReq, 'متأخر')}</td><td class="num">${d.openCmp}${lateTag(d.overdueCmp, 'متأخرة')}</td><td class="num ${d.overUnclaimed ? 'w' : ''}">${d.overUnclaimed}</td></tr>`).join('');
   return `
   <div class="head"><div><p class="crumbs"><a href="#uni">لوحة الجامعة</a><span aria-hidden="true">‹</span><span>لوحة الكلية</span></p><h1>${esc(c.name)}</h1></div><nav class="pills" aria-label="اختيار الكلية">${pills}</nav></div>
-  <section class="kpis" aria-label="مؤشرات الكلية">
+  ${headline(M, c, [c.name], c.name, D.map(d => ({ label:d.name, link:dl(d), s:d })))}
+  <section class="kpis compact" aria-label="مؤشرات الكلية">
     ${kpi('أعضاء على رأس العمل', c.fac, `من ${c.all} · اكتمال الملفات ${pc(c.profilePct)}`, '', 'الأعضاء')}
     ${kpi('الطلاب', fmt(c.students), `طالب لكل عضو ${f1(c.ratio)} · الجامعة ${f1(u.ratio)}`, vsCol(c.ratio, u.ratio, false) === 'w' ? 'warn' : '', 'الطلاب')}
     ${kpi('أبحاث ' + s.year, c.pubs, `${f2(c.perFac)} لكل عضو · الجامعة ${f2(u.perFac)}`, vsCol(c.perFac, u.perFac, true) === 'w' ? 'warn' : 'good', 'الأبحاث')}
@@ -535,7 +597,7 @@ function viewCollege(M, ci){
     ${kpi('شكاوى مفتوحة', c.openCmp, `${c.overdueCmp} متأخرة`, c.overdueCmp ? 'crit' : '', 'الشكاوى')}
   </section>
   ${card('h-cmp', 'مقارنة الأقسام', '', `<p class="foot" style="margin:0">اختر قسماً لفتح لوحته · المقارنة بمتوسط الكلية</p>` + table(['القسم', 'أعضاء', 'طلاب', 'طالب/عضو', 'متوسط العبء', 'أبحاث ' + s.year, 'بحث/عضو', 'اكتمال الملفات', 'طلبات معلّقة', 'شكاوى مفتوحة', 'عبء زائد دون مطالبة'], rows +
-    totalRow(['إجمالي الكلية', c.fac, fmt(c.students), f1(c.ratio), f1(c.avgLoad), c.pubs, f2(c.perFac), pc(c.profilePct), c.openReq, c.openCmp, c.overUnclaimed]), 1000))}
+    totalRow(['إجمالي الكلية', c.fac, fmt(c.students), f1(c.ratio), f1(c.avgLoad), c.pubs, f2(c.perFac), pc(c.profilePct), c.openReq, c.openCmp, c.overUnclaimed]), 1000) + mCards(D.map(d => ({ link:dl(d), rows:[['طالب لكل عضو', f1(d.ratio)], ['بحث لكل عضو', f2(d.perFac)], ['متوسط العبء', f1(d.avgLoad)], ['طلبات متأخرة', d.overdueReq], ['شكاوى مفتوحة', d.openCmp], ['عبء زائد', d.overUnclaimed]] }))))}
   <div class="row">
     ${card('h-cal', 'تتطلب انتباه العمادة', 'محسوبة آلياً',
       alertBox(c.overUnclaimed, 'أعضاء تجاوز عبؤهم النصاب ولم يطالبوا بالمكافأة', 'العبء من أكاديميا وحالة الطلب من الخدمة الذاتية.', 'warn') +
@@ -575,7 +637,8 @@ function viewDept(M, i){
     <td class="num">${f.openReqs}</td><td class="w" style="white-space:normal;min-width:170px">${f.flags.map(esc).join('، ')}</td></tr>`).join('');
   return `
   <div class="head"><div><p class="crumbs"><a href="#uni">لوحة الجامعة</a><span aria-hidden="true">‹</span><a href="#college-${ci}">${esc(d.college)}</a><span aria-hidden="true">‹</span><span>لوحة القسم</span></p><h1>قسم ${esc(d.name)}</h1></div><nav class="pills" aria-label="اختيار القسم">${pills}</nav></div>
-  <section class="kpis" aria-label="مؤشرات القسم">
+  ${headline(M, d, [d.name, d.college], 'قسم ' + d.name, null)}
+  <section class="kpis compact" aria-label="مؤشرات القسم">
     ${kpi('أعضاء على رأس العمل', d.fac, `من ${d.all} · اكتمال الملفات ${pc(d.profilePct)}`, '', 'الأعضاء')}
     ${kpi('طالب لكل عضو', f1(d.ratio), `${fmt(d.students)} طالباً · الكلية ${f1(c.ratio)}`, vsCol(d.ratio, c.ratio, false) === 'w' ? 'warn' : 'good', 'الطلاب')}
     ${kpi('متوسط العبء', f1(d.avgLoad), `الفرق بين الأعلى والأقل: ${d.maxLoad == null ? '—' : d.maxLoad - d.minLoad} ساعة`, '', 'الأعضاء ← أكاديميا')}
@@ -783,6 +846,35 @@ function viewQuality(M){
   ${groups || card('q-ok', 'لا توجد ملاحظات', '', '<p class="empty">كل الأوراق سليمة ومترابطة.</p>')}`;
 }
 
+/* ---------- الخلاصة والمؤشرات الرئيسية ---------- */
+function headline(M, unit, names, subject, children){
+  const ev = IND.map(ind => { const t = tgtFor(M, ind.code, names).v; return { ind, t, e:evalInd(ind, unit, t) }; });
+  const rated = ev.filter(x => x.e.st !== 'na'), met = rated.filter(x => x.e.st === 'met').length;
+  const gap = x => { const v = x.e.v, t = x.t; return x.ind.dir === 'high' ? (t ? (t - v) / t : 0) : (t === 0 ? (v > 0 ? 0.3 : 0) : (v ? (v - t) / v : 0)); };
+  const behind = rated.filter(x => x.e.st === 'behind').sort((a, b) => gap(b) - gap(a));
+  let s1 = `${esc(subject)}: <b>${met} من ${rated.length}</b> مستهدفات محققة.`;
+  if (behind.length) {
+    const w = behind[0];
+    s1 += ` أكبر فجوة في <b>${esc(w.ind.name)}</b>: <bdi dir="ltr">${w.ind.f(w.e.v)}</bdi> والمستهدف <bdi dir="ltr">${w.ind.f(w.t)}</bdi>`;
+    const ch = (children || []).map(c => ({ c, v:w.ind.val(c.s) })).filter(x => x.v != null && isFinite(x.v));
+    if (ch.length > 1) { ch.sort((a, b) => w.ind.dir === 'high' ? a.v - b.v : b.v - a.v); s1 += `، وأضعفها ${ch[0].c.link || esc(ch[0].c.label)} (<bdi dir="ltr">${w.ind.f(ch[0].v)}</bdi>)`; }
+    s1 += '.';
+  } else s1 += ' لا توجد مؤشرات متأخرة عن المستهدف.';
+  const acts = [];
+  if (unit.secClash) acts.push(`معالجة ${unit.secClash} تعارضاً في الجداول`);
+  if (unit.overdueCmp) acts.push(`إغلاق ${unit.overdueCmp} شكوى متأخرة`);
+  if (unit.overdueReq) acts.push(`تسريع ${unit.overdueReq} طلباً متأخراً`);
+  if (unit.overUnclaimed) acts.push(`تنبيه ${unit.overUnclaimed} عضواً بمكافأة العبء الزائد`);
+  if (unit.minutesPending) acts.push(`اعتماد ${unit.minutesPending} محضراً معلّقاً`);
+  const order = { behind:0, near:1, met:2 };
+  const top = rated.slice().sort((a, b) => order[a.e.st] - order[b.e.st] || gap(b) - gap(a)).slice(0, 4);
+  const tone = { behind:'crit', near:'warn', met:'good' };
+  const tiles = top.map(x => `<div class="kpi ${tone[x.e.st]}"><span class="l">${esc(x.ind.name)}</span><span class="v num"><bdi dir="ltr">${x.ind.f(x.e.v)}</bdi></span><span class="n">المستهدف: ${x.ind.dir === 'high' ? 'لا يقل عن' : 'لا يزيد على'} <bdi dir="ltr">${x.ind.f(x.t)}</bdi></span><span class="st st-${x.e.st}" style="align-self:flex-start">${ST_TXT[x.e.st]}</span></div>`).join('');
+  return `<section class="summary" aria-label="الخلاصة"><span class="lbl">الخلاصة · تُكتب آلياً من البيانات</span><p>${s1}</p>${acts.length ? `<p class="act">إجراءات مقترحة: ${acts.slice(0, 3).join('، ')}.</p>` : ''}</section>`
+    + (tiles ? `<section class="kpis primary" aria-label="المؤشرات الأهم مقابل المستهدف">${tiles}</section>` : '');
+}
+const dateTxt = d => d ? d.toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { day:'numeric', month:'long', year:'numeric' }) : '—';
+
 /* ---------- المساعد ---------- */
 const SUGG = ['ما المطلوب مني الآن؟', 'ما مستحقاتي؟', 'هل أنا مؤهل للترقية؟', 'ما حالة طلباتي؟', 'لماذا رُفض طلبي؟', 'هل في جدولي مشكلة؟', 'كم بحثاً نشرت هذا العام؟'];
 function memberCtx(f, M){
@@ -922,6 +1014,45 @@ function bindAI(i){
 
 
 
+const XLSX_SRC = 'vendor/xlsx.full.min.js';
+let xlsxP = null;
+function loadXLSX(){
+  if (window.XLSX) return Promise.resolve();
+  if (!xlsxP) xlsxP = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = XLSX_SRC; sc.onload = res; sc.onerror = () => { xlsxP = null; rej(new Error('تعذّر تحميل قارئ ملفات Excel. تحقق من الاتصال ثم حاول مرة أخرى.')); }; document.head.appendChild(sc); });
+  return xlsxP;
+}
+/* ---------- البحث ---------- */
+const norm = t => String(t || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').toLowerCase().trim();
+function searchIndex(M){
+  const L = [];
+  M.colleges.forEach((c, i) => L.push({ t:c.name, sub:'كلية', h:'#college-' + i }));
+  M.dept.forEach((d, i) => L.push({ t:'قسم ' + d.name, sub:d.college, h:'#dept-' + i }));
+  M.members.forEach((f, i) => L.push({ t:f.name, sub:f.rank + ' · ' + f.dept, h:'#member-' + i, k:f.id }));
+  const seen = new Set();
+  M.sec.forEach(x => { const key = x.code + '|' + x.dept; if (seen.has(key)) return; seen.add(key); const di = M.dept.findIndex(d => d.name === x.dept); if (di >= 0) L.push({ t:x.code + ' · ' + x.course, sub:'مقرر · قسم ' + x.dept, h:'#dept-' + di }); });
+  L.forEach(o => { o.n = norm(o.t + ' ' + (o.k || '')); });
+  return L;
+}
+function runSearch(){
+  const q = norm(document.getElementById('q').value), box = document.getElementById('results');
+  if (!S.model || q.length < 2) { box.classList.remove('open'); box.innerHTML = ''; return; }
+  if (!S.index) S.index = searchIndex(S.model);
+  const hits = S.index.filter(o => o.n.indexOf(q) >= 0).slice(0, 8);
+  box.innerHTML = hits.length ? hits.map(o => `<a href="${o.h}"><span>${esc(o.t)}</span><small>${esc(o.sub)}</small></a>`).join('') : '<p class="foot" style="margin:8px 12px">لا توجد نتائج.</p>';
+  box.classList.add('open');
+}
+(function(){
+  const q = document.getElementById('q'), box = document.getElementById('results');
+  if (!q) return;
+  q.addEventListener('input', runSearch);
+  q.addEventListener('focus', runSearch);
+  q.addEventListener('keydown', e => { if (e.key === 'Escape') { q.value = ''; runSearch(); q.blur(); } });
+  box.addEventListener('click', e => { if (e.target.closest('a')) { q.value = ''; box.classList.remove('open'); } });
+  document.addEventListener('click', e => { if (!e.target.closest('#searchBox')) box.classList.remove('open'); });
+  const pb = document.getElementById('printBtn'); if (pb) pb.addEventListener('click', () => window.print());
+  const ob = document.querySelector('label[for="file"]'); if (ob) ['pointerenter', 'focus'].forEach(ev => ob.addEventListener(ev, () => { loadXLSX().catch(() => {}); }, { once:true }));
+})();
+
 /* ---------- التوجيه ---------- */
 function route(){
   const M = S.model, app = document.getElementById('app');
@@ -943,24 +1074,26 @@ function route(){
   if (M && level === 'member') bindAI(+mm[1]);
   const st = document.getElementById('srcState');
   st.innerHTML = M ? (S.source === 'file'
-    ? `<span class="tag real">بياناتك</span> الملف: <b>${esc(S.fileName)}</b> · ${M.colleges.length} كليات · ${M.dept.length} قسماً · ${M.fac.length} عضواً · ${M.sec.length} شعبة · <a href="#quality">جودة البيانات ${pc(M.quality.score)}</a>. تُقرأ داخل متصفحك فقط ولا تُرسل لأي جهة.`
+    ? `<span class="tag real">بياناتك</span> <b>${esc(S.fileName)}</b> · تاريخ الملف ${dateTxt(S.dataDate)} · ${M.colleges.length} كليات · ${M.dept.length} قسماً · ${M.fac.length} عضواً · ${M.sec.length} شعبة · <a href="#quality">جودة البيانات ${pc(M.quality.score)}</a>. تُقرأ داخل متصفحك فقط ولا تُرسل لأي جهة.`
     : `<span class="tag sample">بيانات توضيحية</span> ثلاث كليات افتراضية لعرض طريقة العمل. افتح قالب Excel بعد تعبئته لتظهر بياناتك؛ تُقرأ داخل متصفحك فقط.`) : 'جارٍ التحميل…';
 }
-function load(raw, source, name){
-  try { S.model = build(raw); S.source = source; S.fileName = name || ''; S.error = ''; S.reqF = 'all'; S.last = { college:0, dept:0, member:0 }; S.chat = { key:'', msgs:[] }; }
+function load(raw, source, name, date){
+  try { S.model = build(raw); S.index = null; S.dataDate = date || new Date(); S.source = source; S.fileName = name || ''; S.error = ''; S.reqF = 'all'; S.last = { college:0, dept:0, member:0 }; S.chat = { key:'', msgs:[] }; }
   catch (e) { S.error = 'تعذّر حساب المؤشرات: ' + e.message; }
   route();
 }
 function readFile(file){
   if (!file) return;
-  if (typeof XLSX === 'undefined') { S.error = 'تعذّر تحميل قارئ ملفات Excel. أعد تحميل الصفحة.'; route(); return; }
+  const st = document.getElementById('srcState'); st.textContent = 'جارٍ قراءة الملف…';
+  loadXLSX().then(() => {
   const fr = new FileReader();
   fr.onload = e => {
-    try { const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array', cellDates:true}); load(fromWorkbook(wb), 'file', file.name); location.hash = 'uni'; }
+    try { const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array', cellDates:true}); load(fromWorkbook(wb), 'file', file.name, file.lastModified ? new Date(file.lastModified) : null); location.hash = 'uni'; }
     catch (err) { S.error = err.message || 'تعذّرت قراءة الملف. تأكد أنه بصيغة xlsx ومبني على القالب.'; route(); }
   };
   fr.onerror = () => { S.error = 'تعذّرت قراءة الملف.'; route(); };
   fr.readAsArrayBuffer(file);
+  }).catch(err => { S.error = err.message; route(); });
 }
 document.getElementById('file').addEventListener('change', e => { readFile(e.target.files[0]); e.target.value = ''; });
 document.getElementById('sampleBtn').addEventListener('click', () => { load(sampleRaw(), 'sample'); });
